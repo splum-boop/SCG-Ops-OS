@@ -1,0 +1,890 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SCG Ops OS</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone@7.23.9/babel.min.js"></script>
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg-base:    #0f0f1a;
+      --bg-card:    #16213e;
+      --bg-header:  #0d0d1b;
+      --border:     #1e2a4a;
+      --text-primary:   #f0f4ff;
+      --text-secondary: #8b9abf;
+      --text-dim:       #4a5578;
+      --green:  #22c55e;
+      --yellow: #eab308;
+      --red:    #ef4444;
+      --purple: #6366f1;
+    }
+
+    html, body { height: 100%; }
+
+    body {
+      background: var(--bg-base);
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      color: var(--text-primary);
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+
+    #root { min-height: 100vh; display: flex; flex-direction: column; }
+
+    /* ── Grid ── */
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 14px;
+    }
+    @media (max-width: 767px) {
+      .kpi-grid { grid-template-columns: 1fr; }
+      .hide-mobile { display: none !important; }
+    }
+    @media (min-width: 768px) and (max-width: 1023px) {
+      .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+
+    /* ── Pulse skeleton ── */
+    @keyframes shimmer {
+      0%   { opacity: 0.35; }
+      50%  { opacity: 0.65; }
+      100% { opacity: 0.35; }
+    }
+    .skeleton { animation: shimmer 1.6s ease-in-out infinite; background: var(--border); border-radius: 8px; }
+
+    /* ── Spin ── */
+    @keyframes rotate { to { transform: rotate(360deg); } }
+    .spinning { animation: rotate 0.8s linear infinite; display: inline-block; transform-origin: center; }
+
+    /* ── Ring transition ── */
+    .ring-progress { transition: stroke-dashoffset 0.7s cubic-bezier(0.4,0,0.2,1), stroke 0.4s ease; }
+
+    /* ── Status dot glow ── */
+    .status-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    /* ── Scrollbar ── */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel">
+const { useState, useEffect, useCallback, useMemo, useRef } = React;
+
+/* ╔══════════════════════════════════════════════════════════════════════╗
+   ║  ⚙️  CONFIGURATION  — edit before deploying                         ║
+   ╚══════════════════════════════════════════════════════════════════════╝ */
+const CONFIG = {
+  /**
+   * 🔑 Airtable Personal Access Token
+   * Create one at: https://airtable.com/create/tokens
+   * Scope needed: data.records:read  on base appTxjUklSxnapgJr
+   *
+   * ⚠️ SECURITY: This token will be visible in the page source.
+   *    Use a scoped, read-only token limited to this one base only.
+   *    Do NOT use your account-level API key.
+   */
+  AIRTABLE_TOKEN: 'YOUR_AIRTABLE_PERSONAL_ACCESS_TOKEN_HERE',
+
+  BASE_ID: 'appTxjUklSxnapgJr',
+
+  /* Table names — must match exactly (including case & spaces) */
+  SALES_TABLE:   'Daily Sales & Labor',
+  TARGETS_TABLE: 'KPI Targets',
+
+  /* Shown in the header */
+  BUSINESS_NAME: 'SCG',
+  LOCATION_NAME: 'Main Location',
+
+  /* Auto-refresh interval in milliseconds (default: 5 min) */
+  REFRESH_MS: 5 * 60 * 1000,
+};
+
+/* ╔══════════════════════════════════════════════════════════════════════╗
+   ║  📋 FIELD MAPPINGS                                                   ║
+   ║  Update these to match your exact Airtable column names.            ║
+   ╚══════════════════════════════════════════════════════════════════════╝ */
+
+/** "Daily Sales & Labor" table fields */
+const F = {
+  date:         'Date',             // Date field
+  grossSales:   'Gross Sales',      // Currency / Number
+  laborCost:    'Labor Cost',       // Currency / Number
+  laborHours:   'Labor Hours',      // Number (e.g. 34.5)
+  laborPct:     'Labor %',          // Number (e.g. 24.5 = 24.5%)
+  foodCostPct:  'Food Cost %',      // Number (e.g. 25.1 = 25.1%)
+  wastePct:     'Waste %',          // Number (e.g. 1.8 = 1.8%)
+  splh:         'SPLH',             // Number — Sales Per Labor Hour
+  avgCheck:     'Avg Check',        // Currency / Number — average ticket
+  transactions: 'Transaction Count',// Integer
+};
+
+/** "KPI Targets" table fields */
+const TF = {
+  name:            'Name',             // Text — MUST match values in KPI_NAMES below
+  target:          'Target',           // Number — the performance goal
+  yellowThreshold: 'Yellow Threshold', // Number — boundary between yellow and red
+  higherIsBetter:  'Higher is Better', // Checkbox — true = Sales/SPLH/Avg Check
+};
+
+/**
+ * KPI Names — these must exactly match the "Name" field values in
+ * your KPI Targets Airtable table (case-sensitive).
+ */
+const KPI = {
+  SALES:     'Sales',
+  LABOR:     'Labor %',
+  FOOD_COST: 'Food Cost %',
+  WASTE:     'Waste %',
+  SPLH:      'SPLH',
+  AVG_CHECK: 'Avg Check',
+};
+
+/* ════════════════════════════════════════════════════════════════════════
+   🌐  AIRTABLE API
+   ════════════════════════════════════════════════════════════════════════ */
+async function airtableFetchAll(tableName) {
+  const records = [];
+  let offset;
+  do {
+    const qs = new URLSearchParams({ pageSize: '100' });
+    if (offset) qs.set('offset', offset);
+    const url = `https://api.airtable.com/v0/${CONFIG.BASE_ID}/${encodeURIComponent(tableName)}?${qs}`;
+    const res = await fetch(url, {
+      headers: { Authorization: `Bearer ${CONFIG.AIRTABLE_TOKEN}` },
+    });
+    if (!res.ok) {
+      let msg = `HTTP ${res.status}`;
+      try { const j = await res.json(); msg = j.error?.message || msg; } catch {}
+      throw new Error(`Airtable (${tableName}): ${msg}`);
+    }
+    const json = await res.json();
+    records.push(...(json.records ?? []));
+    offset = json.offset;
+  } while (offset);
+  return records;
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   📅  DATE HELPERS
+   ════════════════════════════════════════════════════════════════════════ */
+function todayLocal() {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+const isoStr = d => d.toISOString().slice(0, 10);
+
+function weekMonday(d) {
+  const r = new Date(d);
+  const day = r.getDay(); // 0=Sun
+  r.setDate(r.getDate() - (day === 0 ? 6 : day - 1));
+  return r;
+}
+function monthFirst(d) {
+  return new Date(d.getFullYear(), d.getMonth(), 1);
+}
+
+function labelDate(iso) {
+  return new Date(iso + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+function labelDateLong(iso) {
+  return new Date(iso + 'T00:00:00').toLocaleDateString('en-US', {
+    weekday: 'short', month: 'short', day: 'numeric',
+  });
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   🔢  METRICS AGGREGATION
+   ════════════════════════════════════════════════════════════════════════ */
+function aggregateMetrics(records, period) {
+  if (!records?.length) return null;
+
+  let rows;
+  if (period === 'daily') {
+    const allDates = records.map(r => r.fields[F.date]).filter(Boolean).sort();
+    const latest = allDates[allDates.length - 1];
+    if (!latest) return null;
+    rows = records.filter(r => r.fields[F.date] === latest);
+  } else {
+    const now = todayLocal();
+    const start = isoStr(period === 'wtd' ? weekMonday(now) : monthFirst(now));
+    const end   = isoStr(now);
+    rows = records.filter(r => {
+      const d = r.fields[F.date];
+      return d && d >= start && d <= end;
+    });
+  }
+  if (!rows.length) return null;
+
+  const n   = rows.length;
+  const num = (rec, key) => parseFloat(rec.fields[key]) || 0;
+  const sum = key => rows.reduce((acc, r) => acc + num(r, key), 0);
+  const avg = key => sum(key) / n;
+
+  // Always sum raw dollar/count fields
+  const grossSales   = sum(F.grossSales);
+  const laborCost    = sum(F.laborCost);
+  const laborHours   = sum(F.laborHours);
+  const transactions = sum(F.transactions);
+
+  // Per spec: average the derived % / rate metrics for WTD & MTD
+  let laborPct    = avg(F.laborPct);
+  let foodCostPct = avg(F.foodCostPct);
+  let wastePct    = avg(F.wastePct);
+  let splh        = avg(F.splh);
+  let avgCheck    = avg(F.avgCheck);
+
+  // Fallback: compute from raw totals if stored fields are blank/zero
+  if (!laborPct    && grossSales && laborCost)    laborPct    = (laborCost    / grossSales) * 100;
+  if (!splh        && grossSales && laborHours)   splh        = grossSales / laborHours;
+  if (!avgCheck    && grossSales && transactions) avgCheck    = grossSales / transactions;
+
+  // Date label string
+  const dates = rows.map(r => r.fields[F.date]).filter(Boolean).sort();
+  let dateLabel = '';
+  if (period === 'daily') {
+    dateLabel = dates.length ? labelDateLong(dates[0]) : '';
+  } else if (dates.length >= 2) {
+    dateLabel = `${labelDate(dates[0])} – ${labelDate(dates[dates.length - 1])}`;
+  } else if (dates.length === 1) {
+    dateLabel = labelDate(dates[0]);
+  }
+
+  return {
+    grossSales, laborCost, laborHours, transactions,
+    laborPct, foodCostPct, wastePct, splh, avgCheck,
+    dateLabel,
+  };
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   🎨  STATUS LOGIC
+   ════════════════════════════════════════════════════════════════════════ */
+const CLR = { green: '#22c55e', yellow: '#eab308', red: '#ef4444', gray: '#374151' };
+
+function kpiStatus(actual, target, yellowThresh, higherIsBetter) {
+  if (actual == null || target == null || isNaN(actual) || isNaN(target)) return 'gray';
+  if (higherIsBetter) {
+    if (actual >= target)                                      return 'green';
+    if (yellowThresh != null && actual >= yellowThresh)        return 'yellow';
+    return 'red';
+  } else {
+    if (actual <= target)                                      return 'green';
+    if (yellowThresh != null && actual <= yellowThresh)        return 'yellow';
+    return 'red';
+  }
+}
+
+// Ring fill 0–1: represents "how close to / beyond target"
+function ringFill(actual, target, higherIsBetter) {
+  if (!actual || !target || isNaN(actual) || isNaN(target)) return 0;
+  const ratio = higherIsBetter ? actual / target : target / actual;
+  return Math.min(Math.max(ratio, 0), 1);
+}
+
+// % of target label (normalized so >100% is always the good direction)
+function pctOfTarget(actual, target, higherIsBetter) {
+  if (!actual || !target || isNaN(actual) || isNaN(target)) return null;
+  return higherIsBetter ? (actual / target) * 100 : (target / actual) * 100;
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   🔤  FORMATTING
+   ════════════════════════════════════════════════════════════════════════ */
+function fmtActual(v, kpi) {
+  if (v == null || isNaN(v)) return '—';
+  switch (kpi) {
+    case KPI.SALES:
+      return v >= 10000
+        ? `$${(v / 1000).toFixed(1)}k`
+        : `$${Math.round(v).toLocaleString('en-US')}`;
+    case KPI.AVG_CHECK:
+    case KPI.SPLH:
+      return `$${v.toFixed(2)}`;
+    case KPI.LABOR: case KPI.FOOD_COST: case KPI.WASTE:
+      return `${v.toFixed(1)}%`;
+    default:
+      return String(+v.toFixed(2));
+  }
+}
+
+function fmtTarget(v, kpi) {
+  if (v == null || isNaN(v)) return '—';
+  switch (kpi) {
+    case KPI.SALES:
+      return v >= 10000
+        ? `$${(v / 1000).toFixed(1)}k`
+        : `$${Math.round(v).toLocaleString('en-US')}`;
+    case KPI.AVG_CHECK:
+    case KPI.SPLH:
+      return `$${v.toFixed(2)}`;
+    case KPI.LABOR: case KPI.FOOD_COST: case KPI.WASTE:
+      return `${v.toFixed(1)}%`;
+    default:
+      return String(+v.toFixed(2));
+  }
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   🔵  STATUS RING SVG
+   ════════════════════════════════════════════════════════════════════════ */
+function StatusRing({ fill = 0, status = 'gray', size = 152, children }) {
+  const sw = 11;
+  const r  = (size - sw * 2) / 2;
+  const c  = 2 * Math.PI * r;
+  const clamped = Math.min(Math.max(fill, 0), 1);
+  const offset  = c * (1 - clamped);
+  const color   = CLR[status] ?? CLR.gray;
+
+  return (
+    <div style={{ position: 'relative', width: size, height: size, flexShrink: 0 }}>
+      <svg
+        width={size} height={size}
+        style={{ transform: 'rotate(-90deg)', overflow: 'visible' }}
+      >
+        {/* Track */}
+        <circle cx={size/2} cy={size/2} r={r}
+          fill="none" stroke="#1e2a4a" strokeWidth={sw} />
+        {/* Progress */}
+        <circle cx={size/2} cy={size/2} r={r}
+          fill="none"
+          stroke={color}
+          strokeWidth={sw}
+          strokeLinecap="round"
+          strokeDasharray={c}
+          strokeDashoffset={offset}
+          className="ring-progress"
+          style={{ filter: status !== 'gray' ? `drop-shadow(0 0 6px ${color}88)` : 'none' }}
+        />
+      </svg>
+      {/* Center content */}
+      <div style={{
+        position: 'absolute', inset: 0,
+        display: 'flex', flexDirection: 'column',
+        alignItems: 'center', justifyContent: 'center',
+        gap: 2,
+      }}>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   📊  KPI CARD
+   ════════════════════════════════════════════════════════════════════════ */
+function KPICard({ kpi, actual, target, yellowThreshold, higherIsBetter, loading }) {
+  const status = loading ? 'gray' : kpiStatus(actual, target, yellowThreshold, higherIsBetter);
+  const fill   = loading ? 0 : ringFill(actual, target, higherIsBetter);
+  const pct    = loading ? null : pctOfTarget(actual, target, higherIsBetter);
+  const color  = CLR[status];
+
+  const cardBorder = status === 'gray'
+    ? 'var(--border)'
+    : `${color}44`;
+
+  const pctLabel = pct == null ? null
+    : pct >= 100
+      ? `▲ ${(pct - 100).toFixed(1)}% above`
+      : `${pct.toFixed(1)}% of target`;
+
+  return (
+    <div style={{
+      background: 'var(--bg-card)',
+      borderRadius: 18,
+      border: `1px solid ${cardBorder}`,
+      padding: '20px 16px 18px',
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      gap: 10,
+      transition: 'border-color 0.4s ease',
+    }}>
+      {/* KPI Label */}
+      <div style={{
+        fontSize: 11,
+        fontWeight: 700,
+        letterSpacing: '0.12em',
+        textTransform: 'uppercase',
+        color: 'var(--text-secondary)',
+      }}>
+        {kpi}
+      </div>
+
+      {/* Ring */}
+      <StatusRing fill={fill} status={status} size={148}>
+        {loading ? (
+          <div className="skeleton" style={{ width: 60, height: 28 }} />
+        ) : (
+          <>
+            <div style={{
+              fontSize: 30,
+              fontWeight: 900,
+              color,
+              lineHeight: 1,
+              letterSpacing: '-0.03em',
+              fontVariantNumeric: 'tabular-nums',
+            }}>
+              {fmtActual(actual, kpi)}
+            </div>
+            <div style={{
+              fontSize: 11,
+              color: 'var(--text-dim)',
+              fontWeight: 500,
+              marginTop: 3,
+            }}>
+              target&nbsp;{fmtTarget(target, kpi)}
+            </div>
+          </>
+        )}
+      </StatusRing>
+
+      {/* % badge */}
+      {!loading && pctLabel && (
+        <div style={{
+          fontSize: 12,
+          fontWeight: 700,
+          color,
+          background: `${color}18`,
+          border: `1px solid ${color}38`,
+          padding: '3px 12px',
+          borderRadius: 20,
+          letterSpacing: '0.02em',
+        }}>
+          {pctLabel}
+        </div>
+      )}
+
+      {loading && (
+        <div className="skeleton" style={{ width: 80, height: 22 }} />
+      )}
+
+      {/* Status dot */}
+      <div className="status-dot" style={{
+        background: color,
+        boxShadow: status !== 'gray' ? `0 0 8px ${color}` : 'none',
+      }} />
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   🔘  PERIOD TOGGLE
+   ════════════════════════════════════════════════════════════════════════ */
+function PeriodToggle({ value, onChange }) {
+  const btns = [
+    { key: 'daily', label: 'Daily' },
+    { key: 'wtd',   label: 'WTD'   },
+    { key: 'mtd',   label: 'MTD'   },
+  ];
+  return (
+    <div style={{
+      display: 'inline-flex',
+      background: '#0d0d1b',
+      borderRadius: 14,
+      padding: 4,
+      border: '1px solid var(--border)',
+      gap: 2,
+    }}>
+      {btns.map(({ key, label }) => {
+        const active = value === key;
+        return (
+          <button key={key} onClick={() => onChange(key)} style={{
+            padding: '9px 22px',
+            borderRadius: 10,
+            border: 'none',
+            cursor: 'pointer',
+            fontFamily: 'inherit',
+            fontWeight: 700,
+            fontSize: 13,
+            letterSpacing: '0.06em',
+            transition: 'all 0.18s ease',
+            background: active ? 'var(--purple)' : 'transparent',
+            color: active ? '#fff' : 'var(--text-dim)',
+            boxShadow: active ? '0 2px 12px #6366f144' : 'none',
+          }}>
+            {label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   📦  SUMMARY BAR
+   ════════════════════════════════════════════════════════════════════════ */
+function SummaryBar({ metrics, loading }) {
+  const items = [
+    {
+      icon: '🧾',
+      label: 'Transactions',
+      value: loading ? null : (metrics?.transactions != null
+        ? Math.round(metrics.transactions).toLocaleString('en-US')
+        : '—'),
+    },
+    {
+      icon: '⏱',
+      label: 'Labor Hours',
+      value: loading ? null : (metrics?.laborHours != null
+        ? `${metrics.laborHours.toFixed(1)} hrs`
+        : '—'),
+    },
+    {
+      icon: '💵',
+      label: 'Labor Cost',
+      value: loading ? null : (metrics?.laborCost != null
+        ? `$${metrics.laborCost.toLocaleString('en-US', { maximumFractionDigits: 0 })}`
+        : '—'),
+    },
+    {
+      icon: '📅',
+      label: 'Period',
+      value: loading ? null : (metrics?.dateLabel || '—'),
+    },
+  ];
+
+  return (
+    <div style={{
+      background: 'var(--bg-card)',
+      borderRadius: 14,
+      border: '1px solid var(--border)',
+      padding: '18px 24px',
+      display: 'flex',
+      flexWrap: 'wrap',
+      gap: '16px 8px',
+      justifyContent: 'space-around',
+      alignItems: 'center',
+    }}>
+      {items.map(({ icon, label, value }, i) => (
+        <div key={label} style={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          gap: 3,
+          minWidth: 90,
+          flex: '1 1 90px',
+        }}>
+          <div style={{ fontSize: 20 }}>{icon}</div>
+          {value == null ? (
+            <div className="skeleton" style={{ width: 64, height: 20, marginTop: 2 }} />
+          ) : (
+            <div style={{
+              fontSize: 17,
+              fontWeight: 800,
+              color: 'var(--text-primary)',
+              fontVariantNumeric: 'tabular-nums',
+              letterSpacing: '-0.01em',
+            }}>
+              {value}
+            </div>
+          )}
+          <div style={{
+            fontSize: 10,
+            fontWeight: 600,
+            color: 'var(--text-dim)',
+            textTransform: 'uppercase',
+            letterSpacing: '0.1em',
+          }}>
+            {label}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   🔝  HEADER
+   ════════════════════════════════════════════════════════════════════════ */
+function Header({ lastUpdated, loading, onRefresh }) {
+  const timeStr = lastUpdated
+    ? lastUpdated.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
+    : '—';
+
+  return (
+    <header style={{
+      background: 'var(--bg-header)',
+      borderBottom: '1px solid var(--border)',
+      padding: '14px 24px',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      position: 'sticky',
+      top: 0,
+      zIndex: 50,
+      backdropFilter: 'blur(8px)',
+    }}>
+      {/* Left — brand */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <span style={{
+          fontSize: 20,
+          fontWeight: 900,
+          color: 'var(--text-primary)',
+          letterSpacing: '-0.03em',
+        }}>
+          {CONFIG.BUSINESS_NAME}
+        </span>
+        <span style={{
+          fontSize: 13,
+          fontWeight: 700,
+          color: 'var(--purple)',
+          background: '#6366f118',
+          border: '1px solid #6366f140',
+          padding: '2px 8px',
+          borderRadius: 6,
+          letterSpacing: '0.1em',
+        }}>
+          OPS OS
+        </span>
+      </div>
+
+      {/* Center — location */}
+      <div className="hide-mobile" style={{
+        fontSize: 13,
+        fontWeight: 600,
+        color: 'var(--text-secondary)',
+        letterSpacing: '0.12em',
+        textTransform: 'uppercase',
+        position: 'absolute',
+        left: '50%',
+        transform: 'translateX(-50%)',
+      }}>
+        {CONFIG.LOCATION_NAME}
+      </div>
+
+      {/* Right — last updated + refresh */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <div style={{ textAlign: 'right' }}>
+          <div style={{ fontSize: 10, color: 'var(--text-dim)', fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+            Last updated
+          </div>
+          <div style={{ fontSize: 12, color: 'var(--text-secondary)', fontWeight: 700 }}>
+            {loading ? <span className="spinning" style={{ fontSize: 14 }}>↻</span> : timeStr}
+          </div>
+        </div>
+        <button
+          onClick={onRefresh}
+          disabled={loading}
+          title="Refresh now"
+          style={{
+            background: '#1e2a4a',
+            border: '1px solid var(--border)',
+            borderRadius: 8,
+            padding: '7px 10px',
+            cursor: loading ? 'default' : 'pointer',
+            color: loading ? 'var(--text-dim)' : 'var(--text-secondary)',
+            fontSize: 15,
+            display: 'flex',
+            alignItems: 'center',
+            transition: 'all 0.2s ease',
+            lineHeight: 1,
+          }}
+          onMouseEnter={e => !loading && (e.currentTarget.style.color = 'var(--text-primary)')}
+          onMouseLeave={e => (e.currentTarget.style.color = loading ? 'var(--text-dim)' : 'var(--text-secondary)')}
+        >
+          <span className={loading ? 'spinning' : ''}>↻</span>
+        </button>
+      </div>
+    </header>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   ⚠️  ERROR BANNER
+   ════════════════════════════════════════════════════════════════════════ */
+function ErrorBanner({ message, onRetry }) {
+  return (
+    <div style={{
+      background: '#2d0a0a',
+      border: '1px solid #7f1d1d',
+      borderRadius: 12,
+      padding: '14px 20px',
+      marginBottom: 20,
+      display: 'flex',
+      alignItems: 'center',
+      gap: 12,
+      flexWrap: 'wrap',
+    }}>
+      <span style={{ fontSize: 18 }}>⚠️</span>
+      <span style={{ flex: 1, fontSize: 13, color: '#fca5a5', minWidth: 200 }}>{message}</span>
+      <button onClick={onRetry} style={{
+        background: '#ef4444',
+        color: '#fff',
+        border: 'none',
+        borderRadius: 7,
+        padding: '6px 16px',
+        cursor: 'pointer',
+        fontFamily: 'inherit',
+        fontWeight: 700,
+        fontSize: 12,
+        letterSpacing: '0.05em',
+      }}>
+        Retry
+      </button>
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   🏠  APP ROOT
+   ════════════════════════════════════════════════════════════════════════ */
+function App() {
+  const [period,      setPeriod     ] = useState('daily');
+  const [salesRows,   setSalesRows  ] = useState([]);
+  const [targetsMap,  setTargetsMap ] = useState({});
+  const [loading,     setLoading    ] = useState(true);
+  const [error,       setError      ] = useState(null);
+  const [lastUpdated, setLastUpdated] = useState(null);
+
+  const loadData = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [salesRecords, targetRecords] = await Promise.all([
+        airtableFetchAll(CONFIG.SALES_TABLE),
+        airtableFetchAll(CONFIG.TARGETS_TABLE),
+      ]);
+
+      // Build target lookup: { 'Sales': { target, yellowThreshold, higherIsBetter }, ... }
+      const map = {};
+      for (const rec of targetRecords) {
+        const name = rec.fields[TF.name];
+        if (name) {
+          map[name] = {
+            target:          parseFloat(rec.fields[TF.target])          ?? null,
+            yellowThreshold: parseFloat(rec.fields[TF.yellowThreshold]) ?? null,
+            higherIsBetter:  !!rec.fields[TF.higherIsBetter],
+          };
+        }
+      }
+
+      setSalesRows(salesRecords);
+      setTargetsMap(map);
+      setLastUpdated(new Date());
+    } catch (err) {
+      console.error(err);
+      setError(err.message || 'Failed to load data from Airtable.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // Initial load
+  useEffect(() => { loadData(); }, [loadData]);
+
+  // Auto-refresh
+  useEffect(() => {
+    const id = setInterval(loadData, CONFIG.REFRESH_MS);
+    return () => clearInterval(id);
+  }, [loadData]);
+
+  const metrics = useMemo(() => aggregateMetrics(salesRows, period), [salesRows, period]);
+
+  const t = name => targetsMap[name] ?? {};
+
+  const kpiCards = [
+    { kpi: KPI.SALES,     actual: metrics?.grossSales,   ...t(KPI.SALES)     },
+    { kpi: KPI.LABOR,     actual: metrics?.laborPct,     ...t(KPI.LABOR)     },
+    { kpi: KPI.FOOD_COST, actual: metrics?.foodCostPct,  ...t(KPI.FOOD_COST) },
+    { kpi: KPI.WASTE,     actual: metrics?.wastePct,     ...t(KPI.WASTE)     },
+    { kpi: KPI.SPLH,      actual: metrics?.splh,         ...t(KPI.SPLH)      },
+    { kpi: KPI.AVG_CHECK, actual: metrics?.avgCheck,     ...t(KPI.AVG_CHECK) },
+  ];
+
+  const hasToken = CONFIG.AIRTABLE_TOKEN !== 'YOUR_AIRTABLE_PERSONAL_ACCESS_TOKEN_HERE';
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
+      <Header lastUpdated={lastUpdated} loading={loading} onRefresh={loadData} />
+
+      <main style={{ flex: 1, padding: '20px 20px 32px', maxWidth: 980, width: '100%', margin: '0 auto' }}>
+
+        {/* Token setup notice */}
+        {!hasToken && !loading && (
+          <div style={{
+            background: '#1c1a05',
+            border: '1px solid #ca8a04',
+            borderRadius: 12,
+            padding: '14px 20px',
+            marginBottom: 20,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12,
+          }}>
+            <span style={{ fontSize: 20 }}>🔑</span>
+            <div style={{ fontSize: 13, color: '#fde68a', lineHeight: 1.6 }}>
+              <strong>Setup required:</strong> Open <code style={{ background: '#2d2a08', padding: '1px 5px', borderRadius: 4 }}>index.html</code> and replace{' '}
+              <code style={{ background: '#2d2a08', padding: '1px 5px', borderRadius: 4 }}>YOUR_AIRTABLE_PERSONAL_ACCESS_TOKEN_HERE</code>{' '}
+              with your Airtable Personal Access Token.
+            </div>
+          </div>
+        )}
+
+        {/* Error */}
+        {error && <ErrorBanner message={error} onRetry={loadData} />}
+
+        {/* Period Toggle */}
+        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 22 }}>
+          <PeriodToggle value={period} onChange={setPeriod} />
+        </div>
+
+        {/* KPI Grid */}
+        <div className="kpi-grid" style={{ marginBottom: 16 }}>
+          {kpiCards.map(({ kpi, actual, target, yellowThreshold, higherIsBetter }) => (
+            <KPICard
+              key={kpi}
+              kpi={kpi}
+              actual={actual}
+              target={target}
+              yellowThreshold={yellowThreshold}
+              higherIsBetter={higherIsBetter}
+              loading={loading}
+            />
+          ))}
+        </div>
+
+        {/* Summary Bar */}
+        <SummaryBar metrics={metrics} loading={loading} />
+      </main>
+
+      {/* Footer */}
+      <footer style={{
+        textAlign: 'center',
+        padding: '10px 24px',
+        fontSize: 10,
+        color: 'var(--text-dim)',
+        borderTop: '1px solid var(--border)',
+        letterSpacing: '0.06em',
+      }}>
+        SCG OPS OS · Auto-refreshes every {CONFIG.REFRESH_MS / 60000} min
+      </footer>
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   🚀  MOUNT
+   ════════════════════════════════════════════════════════════════════════ */
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<App />);
+</script>
+</body>
+</html>
