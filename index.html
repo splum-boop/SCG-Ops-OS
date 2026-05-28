@@ -208,15 +208,21 @@ function buildTargets(records) {
 /* ══════════════════════════════════════════════════════════════════════
    DATE HELPERS
    ══════════════════════════════════════════════════════════════════════ */
-/* Fix 3 — try multiple common names for the Sales Plan/Budget column */
+/* Sales budget field — tries each name in order, case-insensitive via normalization.
+   "Sales Plan / Budget" (spaces around slash) is listed first per confirmed field name. */
 const SALES_BUDGET_VARIANTS = [
-  'Sales Plan/Budget', 'Sales Plan', 'Budget', 'Sales Budget',
+  'Sales Plan / Budget', 'Sales Plan/Budget', 'Sales Plan', 'Budget', 'Sales Budget',
   'Daily Budget', 'Revenue Target', 'Sales Target', 'Plan',
 ];
 function getSalesBudget(record) {
+  const f = record.fields;
   for (const name of SALES_BUDGET_VARIANTS) {
-    const v = parseFloat(record.fields[name]);
-    if (!isNaN(v) && v > 0) return v;
+    // exact match first
+    if (name in f) { const v = parseFloat(f[name]); if (!isNaN(v) && v > 0) return v; }
+    // case+space-insensitive fallback
+    const norm = name.trim().toLowerCase();
+    const key  = Object.keys(f).find(k => k.trim().toLowerCase() === norm);
+    if (key) { const v = parseFloat(f[key]); if (!isNaN(v) && v > 0) return v; }
   }
   return 0;
 }
@@ -776,6 +782,22 @@ function App() {
         fetchAll(CONFIG.SALES_TABLE, tok),
         fetchAll(CONFIG.TARGETS_TABLE, tok),
       ]);
+      /* Debug: log every field name from the first Daily Sales record so the
+         exact column names returned by Airtable can be verified in DevTools. */
+      if (sales.length > 0) {
+        console.group('[SCG Ops OS] Daily Sales & Labor — raw API response (first record)');
+        console.log('All field names:', Object.keys(sales[0].fields));
+        console.log('Full first record fields:', { ...sales[0].fields });
+        const budgetField = SALES_BUDGET_VARIANTS.find(name => {
+          const f = sales[0].fields;
+          if (name in f) return true;
+          const norm = name.trim().toLowerCase();
+          return Object.keys(f).some(k => k.trim().toLowerCase() === norm);
+        });
+        console.log('Sales budget field matched:', budgetField ?? '⚠️  NONE — check SALES_BUDGET_VARIANTS');
+        console.log('Sales budget value (first record):', getSalesBudget(sales[0]));
+        console.groupEnd();
+      }
       setSalesRows(sales);
       setTargetsMap(buildTargets(targets));
       setLastUpdated(new Date());
