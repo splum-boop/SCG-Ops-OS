@@ -216,7 +216,15 @@ function buildTargets(records) {
       if (!isNaN(map[key].yellowThreshold)) map[key].yellowThreshold *= 100;
     }
   }
-  console.log('[SCG Ops OS] Resolved targets map (post-scale):', map);
+  console.group('[SCG Ops OS] Final resolved targets (after decimal scaling)');
+  for (const [kpi, vals] of Object.entries(map)) {
+    console.log(
+      `  ${kpi.padEnd(14)} target=${isNaN(vals.target) ? '⚠️ NaN' : vals.target}` +
+      `  yellow=${isNaN(vals.yellowThreshold) ? '⚠️ NaN' : vals.yellowThreshold}` +
+      `  higherIsBetter=${vals.higherIsBetter}`
+    );
+  }
+  console.groupEnd();
   return map;
 }
 
