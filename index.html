@@ -37,17 +37,23 @@
     }
     #root { min-height: 100vh; display: flex; flex-direction: column; }
 
+    /* Flex grid — justify-content:center auto-centers incomplete last rows (e.g. 5 cards) */
     .kpi-grid {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
+      display: flex;
+      flex-wrap: wrap;
       gap: 14px;
+      justify-content: center;
+    }
+    .kpi-card-wrap {
+      flex: 0 0 var(--card-basis);
+      min-width: 0;
     }
     @media (max-width: 767px) {
-      .kpi-grid { grid-template-columns: 1fr; }
-      .hide-mobile { display: none !important; }
+      .kpi-card-wrap { flex: 0 0 100% !important; }
+      .hide-mobile   { display: none !important; }
     }
     @media (min-width: 768px) and (max-width: 1023px) {
-      .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+      .kpi-card-wrap { flex: 0 0 calc(50% - 7px) !important; }
     }
 
     @keyframes shimmer { 0%,100%{opacity:.35} 50%{opacity:.65} }
@@ -250,7 +256,8 @@ function getSalesBudget(record) {
   return 0;
 }
 const todayLocal  = () => { const d = new Date(); d.setHours(0,0,0,0); return d; };
-const isoStr      = d   => d.toISOString().slice(0, 10);
+/* Use LOCAL date components so UTC conversion never shifts the date (fixes off-by-one in non-UTC timezones) */
+const isoStr      = d   => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 const weekMonday  = d   => { const r = new Date(d), day = r.getDay(); r.setDate(r.getDate() - (day === 0 ? 6 : day - 1)); return r; };
 const monthFirst  = d   => new Date(d.getFullYear(), d.getMonth(), 1);
 const fmtShort    = iso => new Date(iso + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
@@ -267,22 +274,26 @@ function computeMetrics(records, period, selectedDate) {
     if (!selectedDate) return null;
     rows = records.filter(r => r.fields[F.date] === selectedDate);
   } else {
-    /* Fix 2 — WTD/MTD: try the current real period first.
-       If there are no records (data is historical), fall back to the
-       most recent week / month that actually has records in Airtable. */
-    const now   = todayLocal();
-    let start = isoStr(period === 'wtd' ? weekMonday(now) : monthFirst(now));
-    let end   = isoStr(now);
-    rows = records.filter(r => { const d = r.fields[F.date]; return d && d >= start && d <= end; });
+    /* WTD/MTD: try the live period first; if no records (data is historical)
+       fall back to the most recent week/month that has data in Airtable. */
+    const now = todayLocal();
+    const liveStart = isoStr(period === 'wtd' ? weekMonday(now) : monthFirst(now));
+    const liveEnd   = isoStr(now);
+    rows = records.filter(r => { const d = r.fields[F.date]; return d && d >= liveStart && d <= liveEnd; });
 
     if (!rows.length) {
+      /* Sort all available dates and walk backwards to find the most recent
+         week (Mon–last data day) or month (1st–last data day) with records. */
       const allDates = records.map(r => r.fields[F.date]).filter(Boolean).sort();
       const latestDate = allDates[allDates.length - 1];
       if (latestDate) {
-        const latestD = new Date(latestDate + 'T00:00:00');
-        start = isoStr(period === 'wtd' ? weekMonday(latestD) : monthFirst(latestD));
-        end   = latestDate;
-        rows = records.filter(r => { const d = r.fields[F.date]; return d && d >= start && d <= end; });
+        const latestD    = new Date(latestDate + 'T00:00:00');
+        const fallStart  = isoStr(period === 'wtd' ? weekMonday(latestD) : monthFirst(latestD));
+        rows = records.filter(r => { const d = r.fields[F.date]; return d && d >= fallStart && d <= latestDate; });
+        console.log(
+          `[SCG Ops OS] ${period.toUpperCase()} fallback — no records in live range (${liveStart}→${liveEnd}).` +
+          ` Using ${fallStart} → ${latestDate} (${rows.length} records).`
+        );
       }
     }
   }
@@ -294,8 +305,9 @@ function computeMetrics(records, period, selectedDate) {
 
   /* Always sum these */
   const grossSales   = sum(F.grossSales);
-  /* Fix 3 — use multi-variant lookup for the sales budget field */
+  /* Sales budget summed across all rows in the period (daily/WTD/MTD). */
   const salesBudget  = rows.reduce((a, r) => a + getSalesBudget(r), 0);
+  if (salesBudget === 0) console.warn('[SCG Ops OS] salesBudget=0 — check SALES_BUDGET_VARIANTS vs actual field name.');
   const laborCost    = sum(F.laborCost);
   const laborHours   = sum(F.laborHours);
   const transactions = sum(F.transactions);
@@ -368,13 +380,17 @@ function varianceBadge(actual, target, higherIsBetter, kpi) {
     diffStr = `${absDiff.toFixed(1)}%`;
   }
 
-  // For higher-is-better: positive diff → above target (good), negative → below target (bad)
-  // For lower-is-better : positive diff → below target (good), negative → above target (bad)
+  // Higher-is-better: ▲ green when above, ▼ red when below
+  // Lower-is-better : ▼ green when below (good), ▲ red when above (bad)
+  const arrow = higherIsBetter
+    ? (isGood ? '▲' : '▼')
+    : (isGood ? '▼' : '▲');
+
   const direction = higherIsBetter
     ? (isGood ? 'above target' : 'below target')
     : (isGood ? 'below target' : 'above target');
 
-  return { label: `${diffStr} ${direction}`, isGood };
+  return { label: `${arrow} ${diffStr} ${direction}`, isGood };
 }
 
 /* ══════════════════════════════════════════════════════════════════════
@@ -882,6 +898,20 @@ function App() {
     ];
   }, [metrics, targetsMap]);
 
+  /* Fix 5 — only show cards that have at least a target or actual data.
+     While loading, show all 6 as skeletons so the layout doesn't jump. */
+  const visibleCards = useMemo(() => {
+    if (loading) return kpiCards;
+    return kpiCards.filter(c =>
+      (c.actual != null && !isNaN(c.actual)) ||
+      (c.target != null && !isNaN(c.target))
+    );
+  }, [kpiCards, loading]);
+
+  /* Dynamic column count: 4 cards → 2×2, otherwise up to 3 cols */
+  const gridCols   = visibleCards.length === 4 ? 2 : Math.min(Math.max(visibleCards.length, 1), 3);
+  const cardBasis  = `calc((100% - ${14 * (gridCols - 1)}px) / ${gridCols})`;
+
   /* Show token setup if we don't have one or if auth failed */
   if (!token || isAuthErr) {
     return <TokenSetupModal onSave={handleSaveToken} isReset={isAuthErr} />;
@@ -902,7 +932,11 @@ function App() {
         </div>
 
         <div className="kpi-grid" style={{ marginBottom: 16 }}>
-          {kpiCards.map(c => <KPICard key={c.kpi} {...c} loading={loading} />)}
+          {visibleCards.map(c => (
+            <div key={c.kpi} className="kpi-card-wrap" style={{ '--card-basis': cardBasis }}>
+              <KPICard {...c} loading={loading} />
+            </div>
+          ))}
         </div>
 
         <SummaryBar
