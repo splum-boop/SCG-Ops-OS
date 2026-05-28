@@ -14,10 +14,10 @@
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     :root {
-      --bg-base:    #0f0f1a;
-      --bg-card:    #16213e;
-      --bg-header:  #0d0d1b;
-      --border:     #1e2a4a;
+      --bg-base:        #0f0f1a;
+      --bg-card:        #16213e;
+      --bg-header:      #0d0d1b;
+      --border:         #1e2a4a;
       --text-primary:   #f0f4ff;
       --text-secondary: #8b9abf;
       --text-dim:       #4a5578;
@@ -28,7 +28,6 @@
     }
 
     html, body { height: 100%; }
-
     body {
       background: var(--bg-base);
       font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
@@ -36,10 +35,8 @@
       -webkit-font-smoothing: antialiased;
       -moz-osx-font-smoothing: grayscale;
     }
-
     #root { min-height: 100vh; display: flex; flex-direction: column; }
 
-    /* ── Grid ── */
     .kpi-grid {
       display: grid;
       grid-template-columns: repeat(3, 1fr);
@@ -53,29 +50,14 @@
       .kpi-grid { grid-template-columns: repeat(2, 1fr); }
     }
 
-    /* ── Pulse skeleton ── */
-    @keyframes shimmer {
-      0%   { opacity: 0.35; }
-      50%  { opacity: 0.65; }
-      100% { opacity: 0.35; }
-    }
+    @keyframes shimmer { 0%,100%{opacity:.35} 50%{opacity:.65} }
     .skeleton { animation: shimmer 1.6s ease-in-out infinite; background: var(--border); border-radius: 8px; }
 
-    /* ── Spin ── */
     @keyframes rotate { to { transform: rotate(360deg); } }
     .spinning { animation: rotate 0.8s linear infinite; display: inline-block; transform-origin: center; }
 
-    /* ── Ring transition ── */
     .ring-progress { transition: stroke-dashoffset 0.7s cubic-bezier(0.4,0,0.2,1), stroke 0.4s ease; }
 
-    /* ── Status dot glow ── */
-    .status-dot {
-      width: 8px; height: 8px;
-      border-radius: 50%;
-      flex-shrink: 0;
-    }
-
-    /* ── Scrollbar ── */
     ::-webkit-scrollbar { width: 6px; }
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
@@ -87,66 +69,51 @@
 <script type="text/babel">
 const { useState, useEffect, useCallback, useMemo, useRef } = React;
 
-/* ╔══════════════════════════════════════════════════════════════════════╗
-   ║  ⚙️  CONFIGURATION  — edit before deploying                         ║
-   ╚══════════════════════════════════════════════════════════════════════╝ */
+/* ══════════════════════════════════════════════════════════════════════
+   CONFIG
+   Token is stored in localStorage — never hardcoded or committed.
+   ══════════════════════════════════════════════════════════════════════ */
 const CONFIG = {
-  /**
-   * 🔑 Airtable Personal Access Token
-   * Create one at: https://airtable.com/create/tokens
-   * Scope needed: data.records:read  on base appTxjUklSxnapgJr
-   *
-   * ⚠️ SECURITY: This token will be visible in the page source.
-   *    Use a scoped, read-only token limited to this one base only.
-   *    Do NOT use your account-level API key.
-   */
-  AIRTABLE_TOKEN: 'YOUR_AIRTABLE_PERSONAL_ACCESS_TOKEN_HERE',
-
-  BASE_ID: 'appTxjUklSxnapgJr',
-
-  /* Table names — must match exactly (including case & spaces) */
+  BASE_ID:       'appTxjUklSxnapgJr',
   SALES_TABLE:   'Daily Sales & Labor',
   TARGETS_TABLE: 'KPI Targets',
-
-  /* Shown in the header */
   BUSINESS_NAME: 'SCG',
   LOCATION_NAME: 'Main Location',
-
-  /* Auto-refresh interval in milliseconds (default: 5 min) */
-  REFRESH_MS: 5 * 60 * 1000,
+  REFRESH_MS:    5 * 60 * 1000,
+  LS_KEY:        'scg_ops_token',       // localStorage key for the token
 };
 
-/* ╔══════════════════════════════════════════════════════════════════════╗
-   ║  📋 FIELD MAPPINGS                                                   ║
-   ║  Update these to match your exact Airtable column names.            ║
-   ╚══════════════════════════════════════════════════════════════════════╝ */
-
-/** "Daily Sales & Labor" table fields */
+/* ══════════════════════════════════════════════════════════════════════
+   FIELD MAPPINGS — "Daily Sales & Labor" table
+   Edit these strings to match your exact Airtable column names.
+   ══════════════════════════════════════════════════════════════════════ */
 const F = {
-  date:         'Date',             // Date field
-  grossSales:   'Gross Sales',      // Currency / Number
-  laborCost:    'Labor Cost',       // Currency / Number
-  laborHours:   'Labor Hours',      // Number (e.g. 34.5)
-  laborPct:     'Labor %',          // Number (e.g. 24.5 = 24.5%)
-  foodCostPct:  'Food Cost %',      // Number (e.g. 25.1 = 25.1%)
-  wastePct:     'Waste %',          // Number (e.g. 1.8 = 1.8%)
-  splh:         'SPLH',             // Number — Sales Per Labor Hour
-  avgCheck:     'Avg Check',        // Currency / Number — average ticket
-  transactions: 'Transaction Count',// Integer
+  date:         'Date',
+  grossSales:   'Gross Sales',
+  salesBudget:  'Sales Plan/Budget',   // daily sales target / budget
+  laborCost:    'Labor Cost',
+  laborHours:   'Labor Hours',
+  laborPct:     'Labor %',
+  foodCostPct:  'Food Cost %',
+  wastePct:     'Waste %',
+  splh:         'SPLH',
+  avgCheck:     'Avg Check',
+  transactions: 'Transaction Count',
 };
 
-/** "KPI Targets" table fields */
+/* ══════════════════════════════════════════════════════════════════════
+   KPI TARGETS FIELD AUTO-DETECTION
+   Each entry lists candidate field names tried in order, case-insensitive.
+   If your field names differ, add them to the front of the relevant array.
+   ══════════════════════════════════════════════════════════════════════ */
 const TF = {
-  name:            'Name',             // Text — MUST match values in KPI_NAMES below
-  target:          'Target',           // Number — the performance goal
-  yellowThreshold: 'Yellow Threshold', // Number — boundary between yellow and red
-  higherIsBetter:  'Higher is Better', // Checkbox — true = Sales/SPLH/Avg Check
+  name:            ['Name', 'KPI', 'KPI Name', 'Metric', 'Label', 'KPI Label'],
+  target:          ['Target', 'Target Value', 'Goal', 'KPI Target', 'Budget', 'Value'],
+  yellowThreshold: ['Yellow Threshold', 'Yellow Alert', 'Warning Threshold', 'Threshold', 'Yellow', 'Warning', 'Alert'],
+  higherIsBetter:  ['Higher is Better', 'Higher Is Better', 'Increasing', 'Higher', 'Direction'],
 };
 
-/**
- * KPI Names — these must exactly match the "Name" field values in
- * your KPI Targets Airtable table (case-sensitive).
- */
+/* KPI display names — must match the "Name" field values in KPI Targets table */
 const KPI = {
   SALES:     'Sales',
   LABOR:     'Labor %',
@@ -156,733 +123,692 @@ const KPI = {
   AVG_CHECK: 'Avg Check',
 };
 
-/* ════════════════════════════════════════════════════════════════════════
-   🌐  AIRTABLE API
-   ════════════════════════════════════════════════════════════════════════ */
-async function airtableFetchAll(tableName) {
-  const records = [];
+/* ══════════════════════════════════════════════════════════════════════
+   AIRTABLE API
+   ══════════════════════════════════════════════════════════════════════ */
+async function fetchAll(tableName, token) {
+  const all = [];
   let offset;
   do {
     const qs = new URLSearchParams({ pageSize: '100' });
     if (offset) qs.set('offset', offset);
     const url = `https://api.airtable.com/v0/${CONFIG.BASE_ID}/${encodeURIComponent(tableName)}?${qs}`;
-    const res = await fetch(url, {
-      headers: { Authorization: `Bearer ${CONFIG.AIRTABLE_TOKEN}` },
-    });
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
     if (!res.ok) {
       let msg = `HTTP ${res.status}`;
-      try { const j = await res.json(); msg = j.error?.message || msg; } catch {}
-      throw new Error(`Airtable (${tableName}): ${msg}`);
+      try { msg = (await res.json()).error?.message || msg; } catch {}
+      const err = new Error(msg);
+      err.isAuthError = res.status === 401 || res.status === 403;
+      throw err;
     }
-    const json = await res.json();
-    records.push(...(json.records ?? []));
-    offset = json.offset;
+    const j = await res.json();
+    all.push(...(j.records ?? []));
+    offset = j.offset;
   } while (offset);
-  return records;
+  return all;
 }
 
-/* ════════════════════════════════════════════════════════════════════════
-   📅  DATE HELPERS
-   ════════════════════════════════════════════════════════════════════════ */
-function todayLocal() {
-  const d = new Date();
-  d.setHours(0, 0, 0, 0);
-  return d;
-}
-const isoStr = d => d.toISOString().slice(0, 10);
-
-function weekMonday(d) {
-  const r = new Date(d);
-  const day = r.getDay(); // 0=Sun
-  r.setDate(r.getDate() - (day === 0 ? 6 : day - 1));
-  return r;
-}
-function monthFirst(d) {
-  return new Date(d.getFullYear(), d.getMonth(), 1);
+/* Case-insensitive field lookup — tries each candidate name in order */
+function getField(record, names) {
+  const f = record.fields;
+  for (const name of names) {
+    if (name in f) return f[name];
+    const k = Object.keys(f).find(k2 => k2.trim().toLowerCase() === name.trim().toLowerCase());
+    if (k !== undefined) return f[k];
+  }
+  return undefined;
 }
 
-function labelDate(iso) {
-  return new Date(iso + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-}
-function labelDateLong(iso) {
-  return new Date(iso + 'T00:00:00').toLocaleDateString('en-US', {
-    weekday: 'short', month: 'short', day: 'numeric',
-  });
+/* Build targets map with console debug output so field names can be verified */
+function buildTargets(records) {
+  /* ── Open browser DevTools (F12 → Console) to inspect these logs ── */
+  console.group('[SCG Ops OS] KPI Targets — raw API response');
+  console.log('Record count:', records.length);
+  if (records.length > 0) {
+    console.log('Field names found in Airtable:', Object.keys(records[0].fields));
+  }
+  records.forEach((r, i) => console.log(`Record ${i + 1}:`, { ...r.fields }));
+  console.groupEnd();
+
+  const map = {};
+  for (const rec of records) {
+    const name = getField(rec, TF.name);
+    if (!name || typeof name !== 'string') continue;
+    const key = name.trim();
+    map[key] = {
+      target:          parseFloat(getField(rec, TF.target)),
+      yellowThreshold: parseFloat(getField(rec, TF.yellowThreshold)),
+      higherIsBetter:  !!getField(rec, TF.higherIsBetter),
+    };
+  }
+
+  if (Object.keys(map).length === 0) {
+    console.warn(
+      '[SCG Ops OS] ⚠️  No KPI targets loaded.\n' +
+      'Check the TF constant field name arrays match your actual Airtable column names.\n' +
+      'Field names found above — update TF.name / TF.target / etc. to match.'
+    );
+  } else {
+    console.log('[SCG Ops OS] Resolved targets map:', map);
+  }
+  return map;
 }
 
-/* ════════════════════════════════════════════════════════════════════════
-   🔢  METRICS AGGREGATION
-   ════════════════════════════════════════════════════════════════════════ */
-function aggregateMetrics(records, period) {
+/* ══════════════════════════════════════════════════════════════════════
+   DATE HELPERS
+   ══════════════════════════════════════════════════════════════════════ */
+const todayLocal  = () => { const d = new Date(); d.setHours(0,0,0,0); return d; };
+const isoStr      = d   => d.toISOString().slice(0, 10);
+const weekMonday  = d   => { const r = new Date(d), day = r.getDay(); r.setDate(r.getDate() - (day === 0 ? 6 : day - 1)); return r; };
+const monthFirst  = d   => new Date(d.getFullYear(), d.getMonth(), 1);
+const fmtShort    = iso => new Date(iso + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+const fmtLong     = iso => new Date(iso + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+
+/* ══════════════════════════════════════════════════════════════════════
+   METRICS AGGREGATION
+   ══════════════════════════════════════════════════════════════════════ */
+function computeMetrics(records, period, selectedDate) {
   if (!records?.length) return null;
 
   let rows;
   if (period === 'daily') {
-    const allDates = records.map(r => r.fields[F.date]).filter(Boolean).sort();
-    const latest = allDates[allDates.length - 1];
-    if (!latest) return null;
-    rows = records.filter(r => r.fields[F.date] === latest);
+    if (!selectedDate) return null;
+    rows = records.filter(r => r.fields[F.date] === selectedDate);
   } else {
-    const now = todayLocal();
+    const now   = todayLocal();
     const start = isoStr(period === 'wtd' ? weekMonday(now) : monthFirst(now));
     const end   = isoStr(now);
-    rows = records.filter(r => {
-      const d = r.fields[F.date];
-      return d && d >= start && d <= end;
-    });
+    rows = records.filter(r => { const d = r.fields[F.date]; return d && d >= start && d <= end; });
   }
   if (!rows.length) return null;
 
   const n   = rows.length;
-  const num = (rec, key) => parseFloat(rec.fields[key]) || 0;
-  const sum = key => rows.reduce((acc, r) => acc + num(r, key), 0);
-  const avg = key => sum(key) / n;
+  const sum = k => rows.reduce((a, r) => a + (parseFloat(r.fields[k]) || 0), 0);
+  const avg = k => sum(k) / n;
 
-  // Always sum raw dollar/count fields
+  /* Always sum these */
   const grossSales   = sum(F.grossSales);
+  const salesBudget  = sum(F.salesBudget);   // per-day budget, summed over period
   const laborCost    = sum(F.laborCost);
   const laborHours   = sum(F.laborHours);
   const transactions = sum(F.transactions);
 
-  // Per spec: average the derived % / rate metrics for WTD & MTD
+  /* Averaged for WTD/MTD per spec */
   let laborPct    = avg(F.laborPct);
   let foodCostPct = avg(F.foodCostPct);
   let wastePct    = avg(F.wastePct);
   let splh        = avg(F.splh);
   let avgCheck    = avg(F.avgCheck);
 
-  // Fallback: compute from raw totals if stored fields are blank/zero
-  if (!laborPct    && grossSales && laborCost)    laborPct    = (laborCost    / grossSales) * 100;
+  /* Fallback: compute from raw totals if stored field is blank/zero */
+  if (!laborPct    && grossSales && laborCost)    laborPct    = (laborCost / grossSales) * 100;
   if (!splh        && grossSales && laborHours)   splh        = grossSales / laborHours;
   if (!avgCheck    && grossSales && transactions) avgCheck    = grossSales / transactions;
 
-  // Date label string
+  /* Date label for display */
   const dates = rows.map(r => r.fields[F.date]).filter(Boolean).sort();
   let dateLabel = '';
-  if (period === 'daily') {
-    dateLabel = dates.length ? labelDateLong(dates[0]) : '';
-  } else if (dates.length >= 2) {
-    dateLabel = `${labelDate(dates[0])} – ${labelDate(dates[dates.length - 1])}`;
-  } else if (dates.length === 1) {
-    dateLabel = labelDate(dates[0]);
-  }
+  if (period === 'daily')        dateLabel = dates[0] ? fmtLong(dates[0]) : '';
+  else if (dates.length >= 2)    dateLabel = `${fmtShort(dates[0])} – ${fmtShort(dates[dates.length - 1])}`;
+  else if (dates.length === 1)   dateLabel = fmtShort(dates[0]);
 
-  return {
-    grossSales, laborCost, laborHours, transactions,
-    laborPct, foodCostPct, wastePct, splh, avgCheck,
-    dateLabel,
-  };
+  return { grossSales, salesBudget, laborCost, laborHours, transactions, laborPct, foodCostPct, wastePct, splh, avgCheck, dateLabel };
 }
 
-/* ════════════════════════════════════════════════════════════════════════
-   🎨  STATUS LOGIC
-   ════════════════════════════════════════════════════════════════════════ */
+/* ══════════════════════════════════════════════════════════════════════
+   STATUS & COLOR LOGIC
+   ══════════════════════════════════════════════════════════════════════ */
 const CLR = { green: '#22c55e', yellow: '#eab308', red: '#ef4444', gray: '#374151' };
 
 function kpiStatus(actual, target, yellowThresh, higherIsBetter) {
   if (actual == null || target == null || isNaN(actual) || isNaN(target)) return 'gray';
   if (higherIsBetter) {
-    if (actual >= target)                                      return 'green';
-    if (yellowThresh != null && actual >= yellowThresh)        return 'yellow';
+    if (actual >= target) return 'green';
+    if (yellowThresh != null && !isNaN(yellowThresh) && actual >= yellowThresh) return 'yellow';
     return 'red';
   } else {
-    if (actual <= target)                                      return 'green';
-    if (yellowThresh != null && actual <= yellowThresh)        return 'yellow';
+    if (actual <= target) return 'green';
+    if (yellowThresh != null && !isNaN(yellowThresh) && actual <= yellowThresh) return 'yellow';
     return 'red';
   }
 }
 
-// Ring fill 0–1: represents "how close to / beyond target"
 function ringFill(actual, target, higherIsBetter) {
   if (!actual || !target || isNaN(actual) || isNaN(target)) return 0;
-  const ratio = higherIsBetter ? actual / target : target / actual;
-  return Math.min(Math.max(ratio, 0), 1);
+  return Math.min(Math.max(higherIsBetter ? actual / target : target / actual, 0), 1);
 }
 
-// % of target label (normalized so >100% is always the good direction)
 function pctOfTarget(actual, target, higherIsBetter) {
   if (!actual || !target || isNaN(actual) || isNaN(target)) return null;
-  return higherIsBetter ? (actual / target) * 100 : (target / actual) * 100;
+  return (higherIsBetter ? actual / target : target / actual) * 100;
 }
 
-/* ════════════════════════════════════════════════════════════════════════
-   🔤  FORMATTING
-   ════════════════════════════════════════════════════════════════════════ */
-function fmtActual(v, kpi) {
+/* ══════════════════════════════════════════════════════════════════════
+   FORMATTING
+   ══════════════════════════════════════════════════════════════════════ */
+function fmtVal(v, kpi) {
   if (v == null || isNaN(v)) return '—';
   switch (kpi) {
     case KPI.SALES:
-      return v >= 10000
-        ? `$${(v / 1000).toFixed(1)}k`
-        : `$${Math.round(v).toLocaleString('en-US')}`;
+      return v >= 10000 ? `$${(v / 1000).toFixed(1)}k` : `$${Math.round(v).toLocaleString('en-US')}`;
     case KPI.AVG_CHECK:
     case KPI.SPLH:
       return `$${v.toFixed(2)}`;
-    case KPI.LABOR: case KPI.FOOD_COST: case KPI.WASTE:
+    case KPI.LABOR:
+    case KPI.FOOD_COST:
+    case KPI.WASTE:
       return `${v.toFixed(1)}%`;
     default:
-      return String(+v.toFixed(2));
+      return v.toFixed(2);
   }
 }
 
-function fmtTarget(v, kpi) {
-  if (v == null || isNaN(v)) return '—';
-  switch (kpi) {
-    case KPI.SALES:
-      return v >= 10000
-        ? `$${(v / 1000).toFixed(1)}k`
-        : `$${Math.round(v).toLocaleString('en-US')}`;
-    case KPI.AVG_CHECK:
-    case KPI.SPLH:
-      return `$${v.toFixed(2)}`;
-    case KPI.LABOR: case KPI.FOOD_COST: case KPI.WASTE:
-      return `${v.toFixed(1)}%`;
-    default:
-      return String(+v.toFixed(2));
-  }
-}
-
-/* ════════════════════════════════════════════════════════════════════════
-   🔵  STATUS RING SVG
-   ════════════════════════════════════════════════════════════════════════ */
-function StatusRing({ fill = 0, status = 'gray', size = 152, children }) {
-  const sw = 11;
-  const r  = (size - sw * 2) / 2;
-  const c  = 2 * Math.PI * r;
-  const clamped = Math.min(Math.max(fill, 0), 1);
-  const offset  = c * (1 - clamped);
-  const color   = CLR[status] ?? CLR.gray;
-
+/* ══════════════════════════════════════════════════════════════════════
+   COMPONENT: StatusRing
+   ══════════════════════════════════════════════════════════════════════ */
+function StatusRing({ fill = 0, status = 'gray', size = 148, children }) {
+  const sw = 11, r = (size - sw * 2) / 2, c = 2 * Math.PI * r;
+  const offset = c * (1 - Math.min(Math.max(fill, 0), 1));
+  const color = CLR[status] ?? CLR.gray;
   return (
     <div style={{ position: 'relative', width: size, height: size, flexShrink: 0 }}>
-      <svg
-        width={size} height={size}
-        style={{ transform: 'rotate(-90deg)', overflow: 'visible' }}
-      >
-        {/* Track */}
+      <svg width={size} height={size} style={{ transform: 'rotate(-90deg)', overflow: 'visible' }}>
+        <circle cx={size/2} cy={size/2} r={r} fill="none" stroke="#1e2a4a" strokeWidth={sw} />
         <circle cx={size/2} cy={size/2} r={r}
-          fill="none" stroke="#1e2a4a" strokeWidth={sw} />
-        {/* Progress */}
-        <circle cx={size/2} cy={size/2} r={r}
-          fill="none"
-          stroke={color}
-          strokeWidth={sw}
-          strokeLinecap="round"
-          strokeDasharray={c}
-          strokeDashoffset={offset}
+          fill="none" stroke={color} strokeWidth={sw}
+          strokeLinecap="round" strokeDasharray={c} strokeDashoffset={offset}
           className="ring-progress"
           style={{ filter: status !== 'gray' ? `drop-shadow(0 0 6px ${color}88)` : 'none' }}
         />
       </svg>
-      {/* Center content */}
-      <div style={{
-        position: 'absolute', inset: 0,
-        display: 'flex', flexDirection: 'column',
-        alignItems: 'center', justifyContent: 'center',
-        gap: 2,
-      }}>
+      <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2 }}>
         {children}
       </div>
     </div>
   );
 }
 
-/* ════════════════════════════════════════════════════════════════════════
-   📊  KPI CARD
-   ════════════════════════════════════════════════════════════════════════ */
+/* ══════════════════════════════════════════════════════════════════════
+   COMPONENT: KPICard
+   ══════════════════════════════════════════════════════════════════════ */
 function KPICard({ kpi, actual, target, yellowThreshold, higherIsBetter, loading }) {
-  const status = loading ? 'gray' : kpiStatus(actual, target, yellowThreshold, higherIsBetter);
-  const fill   = loading ? 0 : ringFill(actual, target, higherIsBetter);
-  const pct    = loading ? null : pctOfTarget(actual, target, higherIsBetter);
-  const color  = CLR[status];
-
-  const cardBorder = status === 'gray'
-    ? 'var(--border)'
-    : `${color}44`;
-
-  const pctLabel = pct == null ? null
-    : pct >= 100
-      ? `▲ ${(pct - 100).toFixed(1)}% above`
-      : `${pct.toFixed(1)}% of target`;
+  const status   = loading ? 'gray' : kpiStatus(actual, target, yellowThreshold, higherIsBetter);
+  const fill     = loading ? 0     : ringFill(actual, target, higherIsBetter);
+  const pct      = loading ? null  : pctOfTarget(actual, target, higherIsBetter);
+  const color    = CLR[status];
+  const pctLabel = pct == null ? null : pct >= 100 ? `▲ ${(pct - 100).toFixed(1)}% above` : `${pct.toFixed(1)}% of target`;
 
   return (
     <div style={{
-      background: 'var(--bg-card)',
-      borderRadius: 18,
-      border: `1px solid ${cardBorder}`,
-      padding: '20px 16px 18px',
-      display: 'flex',
-      flexDirection: 'column',
-      alignItems: 'center',
-      gap: 10,
-      transition: 'border-color 0.4s ease',
+      background: 'var(--bg-card)', borderRadius: 18,
+      border: `1px solid ${status === 'gray' ? 'var(--border)' : `${color}44`}`,
+      padding: '20px 16px 18px', display: 'flex', flexDirection: 'column',
+      alignItems: 'center', gap: 10, transition: 'border-color 0.4s ease',
     }}>
-      {/* KPI Label */}
-      <div style={{
-        fontSize: 11,
-        fontWeight: 700,
-        letterSpacing: '0.12em',
-        textTransform: 'uppercase',
-        color: 'var(--text-secondary)',
-      }}>
+      <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--text-secondary)' }}>
         {kpi}
       </div>
 
-      {/* Ring */}
       <StatusRing fill={fill} status={status} size={148}>
         {loading ? (
           <div className="skeleton" style={{ width: 60, height: 28 }} />
         ) : (
           <>
-            <div style={{
-              fontSize: 30,
-              fontWeight: 900,
-              color,
-              lineHeight: 1,
-              letterSpacing: '-0.03em',
-              fontVariantNumeric: 'tabular-nums',
-            }}>
-              {fmtActual(actual, kpi)}
+            <div style={{ fontSize: 30, fontWeight: 900, color, lineHeight: 1, letterSpacing: '-0.03em', fontVariantNumeric: 'tabular-nums' }}>
+              {fmtVal(actual, kpi)}
             </div>
-            <div style={{
-              fontSize: 11,
-              color: 'var(--text-dim)',
-              fontWeight: 500,
-              marginTop: 3,
-            }}>
-              target&nbsp;{fmtTarget(target, kpi)}
+            <div style={{ fontSize: 11, color: 'var(--text-dim)', fontWeight: 500, marginTop: 3 }}>
+              target {fmtVal(target, kpi)}
             </div>
           </>
         )}
       </StatusRing>
 
-      {/* % badge */}
       {!loading && pctLabel && (
-        <div style={{
-          fontSize: 12,
-          fontWeight: 700,
-          color,
-          background: `${color}18`,
-          border: `1px solid ${color}38`,
-          padding: '3px 12px',
-          borderRadius: 20,
-          letterSpacing: '0.02em',
-        }}>
+        <div style={{ fontSize: 12, fontWeight: 700, color, background: `${color}18`, border: `1px solid ${color}38`, padding: '3px 12px', borderRadius: 20 }}>
           {pctLabel}
         </div>
       )}
+      {loading && <div className="skeleton" style={{ width: 80, height: 22 }} />}
 
-      {loading && (
-        <div className="skeleton" style={{ width: 80, height: 22 }} />
-      )}
-
-      {/* Status dot */}
-      <div className="status-dot" style={{
-        background: color,
-        boxShadow: status !== 'gray' ? `0 0 8px ${color}` : 'none',
-      }} />
+      <div style={{ width: 8, height: 8, borderRadius: '50%', background: color, boxShadow: status !== 'gray' ? `0 0 8px ${color}` : 'none' }} />
     </div>
   );
 }
 
-/* ════════════════════════════════════════════════════════════════════════
-   🔘  PERIOD TOGGLE
-   ════════════════════════════════════════════════════════════════════════ */
+/* ══════════════════════════════════════════════════════════════════════
+   COMPONENT: PeriodToggle
+   ══════════════════════════════════════════════════════════════════════ */
 function PeriodToggle({ value, onChange }) {
-  const btns = [
-    { key: 'daily', label: 'Daily' },
-    { key: 'wtd',   label: 'WTD'   },
-    { key: 'mtd',   label: 'MTD'   },
-  ];
   return (
-    <div style={{
-      display: 'inline-flex',
-      background: '#0d0d1b',
-      borderRadius: 14,
-      padding: 4,
-      border: '1px solid var(--border)',
-      gap: 2,
-    }}>
-      {btns.map(({ key, label }) => {
-        const active = value === key;
-        return (
-          <button key={key} onClick={() => onChange(key)} style={{
-            padding: '9px 22px',
-            borderRadius: 10,
-            border: 'none',
-            cursor: 'pointer',
-            fontFamily: 'inherit',
-            fontWeight: 700,
-            fontSize: 13,
-            letterSpacing: '0.06em',
-            transition: 'all 0.18s ease',
-            background: active ? 'var(--purple)' : 'transparent',
-            color: active ? '#fff' : 'var(--text-dim)',
-            boxShadow: active ? '0 2px 12px #6366f144' : 'none',
-          }}>
-            {label}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
-/* ════════════════════════════════════════════════════════════════════════
-   📦  SUMMARY BAR
-   ════════════════════════════════════════════════════════════════════════ */
-function SummaryBar({ metrics, loading }) {
-  const items = [
-    {
-      icon: '🧾',
-      label: 'Transactions',
-      value: loading ? null : (metrics?.transactions != null
-        ? Math.round(metrics.transactions).toLocaleString('en-US')
-        : '—'),
-    },
-    {
-      icon: '⏱',
-      label: 'Labor Hours',
-      value: loading ? null : (metrics?.laborHours != null
-        ? `${metrics.laborHours.toFixed(1)} hrs`
-        : '—'),
-    },
-    {
-      icon: '💵',
-      label: 'Labor Cost',
-      value: loading ? null : (metrics?.laborCost != null
-        ? `$${metrics.laborCost.toLocaleString('en-US', { maximumFractionDigits: 0 })}`
-        : '—'),
-    },
-    {
-      icon: '📅',
-      label: 'Period',
-      value: loading ? null : (metrics?.dateLabel || '—'),
-    },
-  ];
-
-  return (
-    <div style={{
-      background: 'var(--bg-card)',
-      borderRadius: 14,
-      border: '1px solid var(--border)',
-      padding: '18px 24px',
-      display: 'flex',
-      flexWrap: 'wrap',
-      gap: '16px 8px',
-      justifyContent: 'space-around',
-      alignItems: 'center',
-    }}>
-      {items.map(({ icon, label, value }, i) => (
-        <div key={label} style={{
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          gap: 3,
-          minWidth: 90,
-          flex: '1 1 90px',
-        }}>
-          <div style={{ fontSize: 20 }}>{icon}</div>
-          {value == null ? (
-            <div className="skeleton" style={{ width: 64, height: 20, marginTop: 2 }} />
-          ) : (
-            <div style={{
-              fontSize: 17,
-              fontWeight: 800,
-              color: 'var(--text-primary)',
-              fontVariantNumeric: 'tabular-nums',
-              letterSpacing: '-0.01em',
-            }}>
-              {value}
-            </div>
-          )}
-          <div style={{
-            fontSize: 10,
-            fontWeight: 600,
-            color: 'var(--text-dim)',
-            textTransform: 'uppercase',
-            letterSpacing: '0.1em',
-          }}>
-            {label}
-          </div>
-        </div>
+    <div style={{ display: 'inline-flex', background: '#0d0d1b', borderRadius: 14, padding: 4, border: '1px solid var(--border)', gap: 2 }}>
+      {[{ k: 'daily', l: 'Daily' }, { k: 'wtd', l: 'WTD' }, { k: 'mtd', l: 'MTD' }].map(({ k, l }) => (
+        <button key={k} onClick={() => onChange(k)} style={{
+          padding: '9px 22px', borderRadius: 10, border: 'none', cursor: 'pointer',
+          fontFamily: 'inherit', fontWeight: 700, fontSize: 13, letterSpacing: '0.06em',
+          transition: 'all 0.18s ease',
+          background: value === k ? 'var(--purple)' : 'transparent',
+          color:      value === k ? '#fff' : 'var(--text-dim)',
+          boxShadow:  value === k ? '0 2px 12px #6366f144' : 'none',
+        }}>{l}</button>
       ))}
     </div>
   );
 }
 
-/* ════════════════════════════════════════════════════════════════════════
-   🔝  HEADER
-   ════════════════════════════════════════════════════════════════════════ */
-function Header({ lastUpdated, loading, onRefresh }) {
-  const timeStr = lastUpdated
-    ? lastUpdated.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
-    : '—';
+/* ══════════════════════════════════════════════════════════════════════
+   COMPONENT: DateNavigator
+   Shows ← date ▾ → for the Daily period.
+   Dates list contains only dates that have actual Airtable records.
+   ══════════════════════════════════════════════════════════════════════ */
+function DateNavigator({ dates, selected, onSelect }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const h = e => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
+  }, [open]);
+
+  if (!dates.length) return <span style={{ color: 'var(--text-dim)', fontSize: 14 }}>No data</span>;
+
+  /* dates is sorted newest-first; idx 0 = most recent */
+  const idx = selected ? dates.indexOf(selected) : 0;
+  const safeIdx  = idx < 0 ? 0 : idx;
+  const canPrev  = safeIdx < dates.length - 1;   // ← go to older date
+  const canNext  = safeIdx > 0;                  // → go to newer date
+  const display  = dates[safeIdx] ? fmtLong(dates[safeIdx]) : '—';
+
+  const NavBtn = ({ label, disabled, onClick }) => (
+    <button onClick={onClick} disabled={disabled} style={{
+      background: '#1e2a4a', border: '1px solid var(--border)', borderRadius: 8,
+      padding: '7px 12px', cursor: disabled ? 'default' : 'pointer',
+      color: disabled ? 'var(--text-dim)' : 'var(--text-secondary)',
+      fontSize: 15, fontWeight: 700, lineHeight: 1,
+      opacity: disabled ? 0.3 : 1, transition: 'opacity 0.15s, color 0.15s',
+    }}>{label}</button>
+  );
 
   return (
-    <header style={{
-      background: 'var(--bg-header)',
-      borderBottom: '1px solid var(--border)',
-      padding: '14px 24px',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      position: 'sticky',
-      top: 0,
-      zIndex: 50,
-      backdropFilter: 'blur(8px)',
+    <div ref={ref} style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 6, zIndex: 10 }}>
+      <NavBtn label="←" disabled={!canPrev} onClick={() => canPrev && onSelect(dates[safeIdx + 1])} />
+
+      <button onClick={() => setOpen(o => !o)} style={{
+        background: '#1e2a4a',
+        border: `1px solid ${open ? 'var(--purple)' : 'var(--border)'}`,
+        borderRadius: 9, padding: '7px 14px', cursor: 'pointer',
+        fontFamily: 'inherit', fontWeight: 700, fontSize: 13, color: 'var(--text-primary)',
+        display: 'flex', alignItems: 'center', gap: 7, whiteSpace: 'nowrap',
+        transition: 'border-color 0.15s',
+        boxShadow: open ? '0 0 0 2px #6366f144' : 'none',
+      }}>
+        <span>📅</span>
+        <span>{display}</span>
+        <span style={{ fontSize: 9, opacity: 0.5, marginLeft: 2 }}>▾</span>
+      </button>
+
+      <NavBtn label="→" disabled={!canNext} onClick={() => canNext && onSelect(dates[safeIdx - 1])} />
+
+      {open && (
+        <div style={{
+          position: 'absolute', top: 'calc(100% + 6px)', left: '50%', transform: 'translateX(-50%)',
+          background: '#1a1f3a', border: '1px solid var(--border)', borderRadius: 12,
+          boxShadow: '0 20px 60px rgba(0,0,0,0.75)', padding: 6,
+          zIndex: 200, maxHeight: 260, overflowY: 'auto', minWidth: 210,
+        }}>
+          {dates.map(d => {
+            const isCur = d === dates[safeIdx];
+            return (
+              <button key={d} onClick={() => { onSelect(d); setOpen(false); }}
+                style={{
+                  display: 'block', width: '100%', textAlign: 'left',
+                  padding: '9px 14px', borderRadius: 8, border: 'none',
+                  cursor: 'pointer', fontFamily: 'inherit', fontSize: 13, fontWeight: 600,
+                  background: isCur ? '#6366f120' : 'transparent',
+                  color: isCur ? 'var(--purple)' : 'var(--text-secondary)',
+                  transition: 'background 0.1s',
+                }}
+                onMouseEnter={e => { if (!isCur) e.currentTarget.style.background = '#ffffff0d'; }}
+                onMouseLeave={e => { e.currentTarget.style.background = isCur ? '#6366f120' : 'transparent'; }}
+              >
+                {fmtLong(d)}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   COMPONENT: SummaryBar
+   ══════════════════════════════════════════════════════════════════════ */
+function SummaryBar({ metrics, loading, period, availableDates, selectedDate, onDateSelect }) {
+  const stats = [
+    { icon: '🧾', label: 'Transactions', value: loading ? null : (metrics?.transactions != null ? Math.round(metrics.transactions).toLocaleString('en-US') : '—') },
+    { icon: '⏱',  label: 'Labor Hours',  value: loading ? null : (metrics?.laborHours  != null ? `${metrics.laborHours.toFixed(1)} hrs` : '—') },
+    { icon: '💵', label: 'Labor Cost',   value: loading ? null : (metrics?.laborCost   != null ? `$${metrics.laborCost.toLocaleString('en-US', { maximumFractionDigits: 0 })}` : '—') },
+  ];
+
+  return (
+    <div style={{
+      background: 'var(--bg-card)', borderRadius: 14, border: '1px solid var(--border)',
+      padding: '16px 20px', display: 'flex', flexWrap: 'wrap',
+      gap: '12px 8px', justifyContent: 'space-around', alignItems: 'center',
     }}>
-      {/* Left — brand */}
+      {stats.map(({ icon, label, value }) => (
+        <div key={label} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, minWidth: 80, flex: '1 1 80px' }}>
+          <div style={{ fontSize: 18 }}>{icon}</div>
+          {value == null
+            ? <div className="skeleton" style={{ width: 56, height: 18, marginTop: 2 }} />
+            : <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>{value}</div>
+          }
+          <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>{label}</div>
+        </div>
+      ))}
+
+      {/* Date section: navigator for Daily, static label for WTD/MTD */}
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, flex: '2 1 200px' }}>
+        {period === 'daily' ? (
+          <DateNavigator dates={availableDates} selected={selectedDate} onSelect={onDateSelect} />
+        ) : (
+          <>
+            <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>
+              {loading ? '—' : (metrics?.dateLabel || '—')}
+            </div>
+            <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Period</div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   COMPONENT: Header
+   ══════════════════════════════════════════════════════════════════════ */
+function Header({ lastUpdated, loading, onRefresh, onResetToken }) {
+  const ts = lastUpdated ? lastUpdated.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : '—';
+  return (
+    <header style={{
+      background: 'var(--bg-header)', borderBottom: '1px solid var(--border)',
+      padding: '14px 24px', display: 'flex', alignItems: 'center',
+      justifyContent: 'space-between', position: 'sticky', top: 0, zIndex: 50,
+    }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-        <span style={{
-          fontSize: 20,
-          fontWeight: 900,
-          color: 'var(--text-primary)',
-          letterSpacing: '-0.03em',
-        }}>
-          {CONFIG.BUSINESS_NAME}
-        </span>
-        <span style={{
-          fontSize: 13,
-          fontWeight: 700,
-          color: 'var(--purple)',
-          background: '#6366f118',
-          border: '1px solid #6366f140',
-          padding: '2px 8px',
-          borderRadius: 6,
-          letterSpacing: '0.1em',
-        }}>
-          OPS OS
-        </span>
+        <span style={{ fontSize: 20, fontWeight: 900, color: 'var(--text-primary)', letterSpacing: '-0.03em' }}>{CONFIG.BUSINESS_NAME}</span>
+        <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--purple)', background: '#6366f118', border: '1px solid #6366f140', padding: '2px 8px', borderRadius: 6, letterSpacing: '0.1em' }}>OPS OS</span>
       </div>
 
-      {/* Center — location */}
-      <div className="hide-mobile" style={{
-        fontSize: 13,
-        fontWeight: 600,
-        color: 'var(--text-secondary)',
-        letterSpacing: '0.12em',
-        textTransform: 'uppercase',
-        position: 'absolute',
-        left: '50%',
-        transform: 'translateX(-50%)',
-      }}>
+      <div className="hide-mobile" style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)', letterSpacing: '0.12em', textTransform: 'uppercase', position: 'absolute', left: '50%', transform: 'translateX(-50%)' }}>
         {CONFIG.LOCATION_NAME}
       </div>
 
-      {/* Right — last updated + refresh */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         <div style={{ textAlign: 'right' }}>
-          <div style={{ fontSize: 10, color: 'var(--text-dim)', fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase' }}>
-            Last updated
-          </div>
+          <div style={{ fontSize: 10, color: 'var(--text-dim)', fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase' }}>Last updated</div>
           <div style={{ fontSize: 12, color: 'var(--text-secondary)', fontWeight: 700 }}>
-            {loading ? <span className="spinning" style={{ fontSize: 14 }}>↻</span> : timeStr}
+            {loading ? <span className="spinning">↻</span> : ts}
           </div>
         </div>
-        <button
-          onClick={onRefresh}
-          disabled={loading}
-          title="Refresh now"
-          style={{
-            background: '#1e2a4a',
-            border: '1px solid var(--border)',
-            borderRadius: 8,
-            padding: '7px 10px',
-            cursor: loading ? 'default' : 'pointer',
-            color: loading ? 'var(--text-dim)' : 'var(--text-secondary)',
-            fontSize: 15,
-            display: 'flex',
-            alignItems: 'center',
-            transition: 'all 0.2s ease',
-            lineHeight: 1,
-          }}
-          onMouseEnter={e => !loading && (e.currentTarget.style.color = 'var(--text-primary)')}
-          onMouseLeave={e => (e.currentTarget.style.color = loading ? 'var(--text-dim)' : 'var(--text-secondary)')}
-        >
+        <button onClick={onRefresh} disabled={loading} title="Refresh now" style={{
+          background: '#1e2a4a', border: '1px solid var(--border)', borderRadius: 8,
+          padding: '7px 10px', cursor: loading ? 'default' : 'pointer',
+          color: 'var(--text-secondary)', fontSize: 15, display: 'flex', alignItems: 'center', lineHeight: 1,
+        }}>
           <span className={loading ? 'spinning' : ''}>↻</span>
         </button>
+        {/* 🔑 opens token setup so the user can rotate the token */}
+        <button onClick={onResetToken} title="Change Airtable token" style={{
+          background: 'transparent', border: '1px solid var(--border)', borderRadius: 8,
+          padding: '6px 9px', cursor: 'pointer', color: 'var(--text-dim)', fontSize: 13, lineHeight: 1,
+        }}>🔑</button>
       </div>
     </header>
   );
 }
 
-/* ════════════════════════════════════════════════════════════════════════
-   ⚠️  ERROR BANNER
-   ════════════════════════════════════════════════════════════════════════ */
+/* ══════════════════════════════════════════════════════════════════════
+   COMPONENT: ErrorBanner
+   ══════════════════════════════════════════════════════════════════════ */
 function ErrorBanner({ message, onRetry }) {
   return (
-    <div style={{
-      background: '#2d0a0a',
-      border: '1px solid #7f1d1d',
-      borderRadius: 12,
-      padding: '14px 20px',
-      marginBottom: 20,
-      display: 'flex',
-      alignItems: 'center',
-      gap: 12,
-      flexWrap: 'wrap',
-    }}>
+    <div style={{ background: '#2d0a0a', border: '1px solid #7f1d1d', borderRadius: 12, padding: '14px 20px', marginBottom: 20, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
       <span style={{ fontSize: 18 }}>⚠️</span>
       <span style={{ flex: 1, fontSize: 13, color: '#fca5a5', minWidth: 200 }}>{message}</span>
-      <button onClick={onRetry} style={{
-        background: '#ef4444',
-        color: '#fff',
-        border: 'none',
-        borderRadius: 7,
-        padding: '6px 16px',
-        cursor: 'pointer',
-        fontFamily: 'inherit',
-        fontWeight: 700,
-        fontSize: 12,
-        letterSpacing: '0.05em',
-      }}>
-        Retry
-      </button>
+      {onRetry && (
+        <button onClick={onRetry} style={{ background: '#ef4444', color: '#fff', border: 'none', borderRadius: 7, padding: '6px 16px', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 700, fontSize: 12 }}>Retry</button>
+      )}
     </div>
   );
 }
 
-/* ════════════════════════════════════════════════════════════════════════
-   🏠  APP ROOT
-   ════════════════════════════════════════════════════════════════════════ */
-function App() {
-  const [period,      setPeriod     ] = useState('daily');
-  const [salesRows,   setSalesRows  ] = useState([]);
-  const [targetsMap,  setTargetsMap ] = useState({});
-  const [loading,     setLoading    ] = useState(true);
-  const [error,       setError      ] = useState(null);
-  const [lastUpdated, setLastUpdated] = useState(null);
+/* ══════════════════════════════════════════════════════════════════════
+   COMPONENT: TokenSetupModal
+   Token is validated against Airtable before being saved.
+   Stored in localStorage — never committed to any file.
+   ══════════════════════════════════════════════════════════════════════ */
+function TokenSetupModal({ onSave, isReset }) {
+  const [tok,    setTok   ] = useState('');
+  const [err,    setErr   ] = useState('');
+  const [saving, setSaving] = useState(false);
 
-  const loadData = useCallback(async () => {
+  const handleSave = async () => {
+    const t = tok.trim();
+    if (!t) { setErr('Please enter your Airtable Personal Access Token.'); return; }
+    setSaving(true);
+    setErr('');
+    try {
+      /* Quick auth check — fetch 1 record so we know the token works */
+      const res = await fetch(
+        `https://api.airtable.com/v0/${CONFIG.BASE_ID}/${encodeURIComponent(CONFIG.SALES_TABLE)}?pageSize=1`,
+        { headers: { Authorization: `Bearer ${t}` } }
+      );
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        setErr(`Airtable rejected the token (${res.status}): ${j.error?.message || 'Invalid token or insufficient permissions.'}`);
+        return;
+      }
+      onSave(t);
+    } catch {
+      setErr('Network error — check your connection and try again.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div style={{ minHeight: '100vh', background: 'var(--bg-base)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+      <div style={{ background: 'var(--bg-card)', borderRadius: 20, border: '1px solid var(--border)', padding: 36, maxWidth: 480, width: '100%', boxShadow: '0 32px 80px rgba(0,0,0,0.8)' }}>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 28 }}>
+          <span style={{ fontSize: 24, fontWeight: 900, color: 'var(--text-primary)' }}>SCG</span>
+          <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--purple)', background: '#6366f118', border: '1px solid #6366f140', padding: '3px 10px', borderRadius: 6, letterSpacing: '0.1em' }}>OPS OS</span>
+        </div>
+
+        <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--text-primary)', marginBottom: 8 }}>
+          {isReset ? '🔑 New Token Required' : '🔑 Connect to Airtable'}
+        </div>
+
+        <p style={{ fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.75, marginBottom: 20 }}>
+          {isReset
+            ? 'Your previous token was revoked or expired. Enter your new read-only token below.'
+            : 'Your token is saved only in this browser\'s local storage — it is never written to any file, never committed to GitHub, and never sent anywhere except directly to Airtable.'}
+        </p>
+
+        <div style={{ background: '#0d0d1b', borderRadius: 10, padding: '13px 16px', marginBottom: 20, fontSize: 12, color: 'var(--text-dim)', lineHeight: 1.8 }}>
+          📋 Create a token at <strong style={{ color: 'var(--text-secondary)' }}>airtable.com/create/tokens</strong><br />
+          Required scope: <code style={{ background: '#1e2a4a', padding: '1px 6px', borderRadius: 4 }}>data.records:read</code><br />
+          Base access: <code style={{ background: '#1e2a4a', padding: '1px 6px', borderRadius: 4 }}>appTxjUklSxnapgJr</code>
+        </div>
+
+        <input
+          type="password"
+          value={tok}
+          onChange={e => { setTok(e.target.value); setErr(''); }}
+          onKeyDown={e => e.key === 'Enter' && !saving && handleSave()}
+          placeholder="pat…"
+          autoFocus
+          style={{
+            width: '100%', padding: '12px 14px', borderRadius: 10,
+            background: '#0d0d1b', border: `1px solid ${err ? '#ef4444' : 'var(--border)'}`,
+            color: 'var(--text-primary)', fontSize: 14, fontFamily: 'inherit',
+            outline: 'none', marginBottom: err ? 8 : 16, transition: 'border-color 0.2s',
+          }}
+        />
+        {err && <div style={{ fontSize: 12, color: '#ef4444', marginBottom: 14, lineHeight: 1.5 }}>{err}</div>}
+
+        <button onClick={handleSave} disabled={saving} style={{
+          width: '100%', padding: '13px', borderRadius: 10, border: 'none',
+          background: saving ? '#2d3561' : 'var(--purple)', color: '#fff',
+          fontFamily: 'inherit', fontWeight: 800, fontSize: 14, letterSpacing: '0.05em',
+          cursor: saving ? 'default' : 'pointer',
+          boxShadow: saving ? 'none' : '0 4px 16px #6366f144', transition: 'all 0.2s',
+        }}>
+          {saving ? 'Verifying token…' : 'Connect Dashboard →'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   APP ROOT
+   ══════════════════════════════════════════════════════════════════════ */
+function App() {
+  /* Token lives in localStorage — never in source code */
+  const [token,        setToken       ] = useState(() => localStorage.getItem(CONFIG.LS_KEY) || '');
+  const [period,       setPeriod      ] = useState('daily');
+  const [salesRows,    setSalesRows   ] = useState([]);
+  const [targetsMap,   setTargetsMap  ] = useState({});
+  const [loading,      setLoading     ] = useState(false);
+  const [error,        setError       ] = useState(null);
+  const [isAuthErr,    setIsAuthErr   ] = useState(false);
+  const [lastUpdated,  setLastUpdated ] = useState(null);
+  const [selectedDate, setSelectedDate] = useState(null);
+
+  /* Sorted newest-first list of dates that have records in Airtable */
+  const availableDates = useMemo(() => {
+    const ds = [...new Set(salesRows.map(r => r.fields[F.date]).filter(Boolean))];
+    return ds.sort().reverse();
+  }, [salesRows]);
+
+  /* Resolved display date: user's pick if valid, else most recent */
+  const resolvedDate = useMemo(() => {
+    if (selectedDate && availableDates.includes(selectedDate)) return selectedDate;
+    return availableDates[0] ?? null;
+  }, [selectedDate, availableDates]);
+
+  const doLoad = useCallback(async tok => {
     setLoading(true);
     setError(null);
+    setIsAuthErr(false);
     try {
-      const [salesRecords, targetRecords] = await Promise.all([
-        airtableFetchAll(CONFIG.SALES_TABLE),
-        airtableFetchAll(CONFIG.TARGETS_TABLE),
+      const [sales, targets] = await Promise.all([
+        fetchAll(CONFIG.SALES_TABLE, tok),
+        fetchAll(CONFIG.TARGETS_TABLE, tok),
       ]);
-
-      // Build target lookup: { 'Sales': { target, yellowThreshold, higherIsBetter }, ... }
-      const map = {};
-      for (const rec of targetRecords) {
-        const name = rec.fields[TF.name];
-        if (name) {
-          map[name] = {
-            target:          parseFloat(rec.fields[TF.target])          ?? null,
-            yellowThreshold: parseFloat(rec.fields[TF.yellowThreshold]) ?? null,
-            higherIsBetter:  !!rec.fields[TF.higherIsBetter],
-          };
-        }
-      }
-
-      setSalesRows(salesRecords);
-      setTargetsMap(map);
+      setSalesRows(sales);
+      setTargetsMap(buildTargets(targets));
       setLastUpdated(new Date());
     } catch (err) {
-      console.error(err);
-      setError(err.message || 'Failed to load data from Airtable.');
+      console.error('[SCG Ops OS]', err);
+      if (err.isAuthError) { setIsAuthErr(true); setError(err.message); }
+      else setError(err.message || 'Failed to load data from Airtable.');
     } finally {
       setLoading(false);
     }
   }, []);
 
-  // Initial load
-  useEffect(() => { loadData(); }, [loadData]);
+  const handleSaveToken = useCallback(t => {
+    localStorage.setItem(CONFIG.LS_KEY, t);
+    setToken(t);
+    setIsAuthErr(false);
+    doLoad(t);
+  }, [doLoad]);
 
-  // Auto-refresh
+  const handleResetToken = useCallback(() => {
+    localStorage.removeItem(CONFIG.LS_KEY);
+    setToken('');
+    setIsAuthErr(false);
+    setSalesRows([]);
+    setTargetsMap({});
+    setError(null);
+    setLastUpdated(null);
+  }, []);
+
+  /* Load on mount if we already have a token */
+  useEffect(() => { if (token) doLoad(token); }, []); // eslint-disable-line
+
+  /* Auto-refresh */
   useEffect(() => {
-    const id = setInterval(loadData, CONFIG.REFRESH_MS);
+    if (!token) return;
+    const id = setInterval(() => doLoad(token), CONFIG.REFRESH_MS);
     return () => clearInterval(id);
-  }, [loadData]);
+  }, [token, doLoad]);
 
-  const metrics = useMemo(() => aggregateMetrics(salesRows, period), [salesRows, period]);
+  const metrics = useMemo(() =>
+    computeMetrics(salesRows, period, resolvedDate),
+    [salesRows, period, resolvedDate]
+  );
 
-  const t = name => targetsMap[name] ?? {};
+  /* Build KPI card data.
+     Sales target: sum of daily salesBudget field. Fallback to KPI Targets row.
+     Yellow threshold for Sales: always 95% of that budget (color spec). */
+  const kpiCards = useMemo(() => {
+    const t = name => targetsMap[name] ?? {};
+    const salesBudget = metrics?.salesBudget ?? 0;
+    const salesTarget = salesBudget > 0 ? salesBudget : (t(KPI.SALES).target ?? null);
+    return [
+      { kpi: KPI.SALES,     actual: metrics?.grossSales   ?? null, target: salesTarget, yellowThreshold: salesTarget ? salesTarget * 0.95 : null, higherIsBetter: true },
+      { kpi: KPI.LABOR,     actual: metrics?.laborPct     ?? null, ...t(KPI.LABOR)     },
+      { kpi: KPI.FOOD_COST, actual: metrics?.foodCostPct  ?? null, ...t(KPI.FOOD_COST) },
+      { kpi: KPI.WASTE,     actual: metrics?.wastePct     ?? null, ...t(KPI.WASTE)     },
+      { kpi: KPI.SPLH,      actual: metrics?.splh         ?? null, ...t(KPI.SPLH)      },
+      { kpi: KPI.AVG_CHECK, actual: metrics?.avgCheck     ?? null, ...t(KPI.AVG_CHECK) },
+    ];
+  }, [metrics, targetsMap]);
 
-  const kpiCards = [
-    { kpi: KPI.SALES,     actual: metrics?.grossSales,   ...t(KPI.SALES)     },
-    { kpi: KPI.LABOR,     actual: metrics?.laborPct,     ...t(KPI.LABOR)     },
-    { kpi: KPI.FOOD_COST, actual: metrics?.foodCostPct,  ...t(KPI.FOOD_COST) },
-    { kpi: KPI.WASTE,     actual: metrics?.wastePct,     ...t(KPI.WASTE)     },
-    { kpi: KPI.SPLH,      actual: metrics?.splh,         ...t(KPI.SPLH)      },
-    { kpi: KPI.AVG_CHECK, actual: metrics?.avgCheck,     ...t(KPI.AVG_CHECK) },
-  ];
-
-  const hasToken = CONFIG.AIRTABLE_TOKEN !== 'YOUR_AIRTABLE_PERSONAL_ACCESS_TOKEN_HERE';
+  /* Show token setup if we don't have one or if auth failed */
+  if (!token || isAuthErr) {
+    return <TokenSetupModal onSave={handleSaveToken} isReset={isAuthErr} />;
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
-      <Header lastUpdated={lastUpdated} loading={loading} onRefresh={loadData} />
+      <Header
+        lastUpdated={lastUpdated} loading={loading}
+        onRefresh={() => doLoad(token)} onResetToken={handleResetToken}
+      />
 
       <main style={{ flex: 1, padding: '20px 20px 32px', maxWidth: 980, width: '100%', margin: '0 auto' }}>
+        {error && !isAuthErr && <ErrorBanner message={error} onRetry={() => doLoad(token)} />}
 
-        {/* Token setup notice */}
-        {!hasToken && !loading && (
-          <div style={{
-            background: '#1c1a05',
-            border: '1px solid #ca8a04',
-            borderRadius: 12,
-            padding: '14px 20px',
-            marginBottom: 20,
-            display: 'flex',
-            alignItems: 'center',
-            gap: 12,
-          }}>
-            <span style={{ fontSize: 20 }}>🔑</span>
-            <div style={{ fontSize: 13, color: '#fde68a', lineHeight: 1.6 }}>
-              <strong>Setup required:</strong> Open <code style={{ background: '#2d2a08', padding: '1px 5px', borderRadius: 4 }}>index.html</code> and replace{' '}
-              <code style={{ background: '#2d2a08', padding: '1px 5px', borderRadius: 4 }}>YOUR_AIRTABLE_PERSONAL_ACCESS_TOKEN_HERE</code>{' '}
-              with your Airtable Personal Access Token.
-            </div>
-          </div>
-        )}
-
-        {/* Error */}
-        {error && <ErrorBanner message={error} onRetry={loadData} />}
-
-        {/* Period Toggle */}
         <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 22 }}>
           <PeriodToggle value={period} onChange={setPeriod} />
         </div>
 
-        {/* KPI Grid */}
         <div className="kpi-grid" style={{ marginBottom: 16 }}>
-          {kpiCards.map(({ kpi, actual, target, yellowThreshold, higherIsBetter }) => (
-            <KPICard
-              key={kpi}
-              kpi={kpi}
-              actual={actual}
-              target={target}
-              yellowThreshold={yellowThreshold}
-              higherIsBetter={higherIsBetter}
-              loading={loading}
-            />
-          ))}
+          {kpiCards.map(c => <KPICard key={c.kpi} {...c} loading={loading} />)}
         </div>
 
-        {/* Summary Bar */}
-        <SummaryBar metrics={metrics} loading={loading} />
+        <SummaryBar
+          metrics={metrics} loading={loading} period={period}
+          availableDates={availableDates} selectedDate={resolvedDate}
+          onDateSelect={setSelectedDate}
+        />
       </main>
 
-      {/* Footer */}
-      <footer style={{
-        textAlign: 'center',
-        padding: '10px 24px',
-        fontSize: 10,
-        color: 'var(--text-dim)',
-        borderTop: '1px solid var(--border)',
-        letterSpacing: '0.06em',
-      }}>
+      <footer style={{ textAlign: 'center', padding: '10px', fontSize: 10, color: 'var(--text-dim)', borderTop: '1px solid var(--border)', letterSpacing: '0.06em' }}>
         SCG OPS OS · Auto-refreshes every {CONFIG.REFRESH_MS / 60000} min
       </footer>
     </div>
   );
 }
 
-/* ════════════════════════════════════════════════════════════════════════
-   🚀  MOUNT
-   ════════════════════════════════════════════════════════════════════════ */
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(<App />);
 </script>
