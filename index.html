@@ -316,9 +316,36 @@ function ringFill(actual, target, higherIsBetter) {
   return Math.min(Math.max(higherIsBetter ? actual / target : target / actual, 0), 1);
 }
 
-function pctOfTarget(actual, target, higherIsBetter) {
-  if (!actual || !target || isNaN(actual) || isNaN(target)) return null;
-  return (higherIsBetter ? actual / target : target / actual) * 100;
+/* Variance badge — raw subtraction only, no division.
+   Higher-is-better : diff = actual − target  (positive = good)
+   Lower-is-better  : diff = target − actual  (positive = good)
+   Badge color is always green (good) / red (bad), independent of the yellow zone. */
+function varianceBadge(actual, target, higherIsBetter, kpi) {
+  if (actual == null || target == null || isNaN(actual) || isNaN(target)) return null;
+
+  const diff    = higherIsBetter ? actual - target : target - actual;
+  const absDiff = Math.abs(diff);
+  const isGood  = diff >= 0;
+
+  let diffStr;
+  if (kpi === KPI.SALES) {
+    diffStr = absDiff >= 1000
+      ? `$${(absDiff / 1000).toFixed(1)}k`
+      : `$${Math.round(absDiff).toLocaleString('en-US')}`;
+  } else if (kpi === KPI.SPLH || kpi === KPI.AVG_CHECK) {
+    diffStr = `$${absDiff.toFixed(2)}`;
+  } else {
+    // Percentage-point KPIs (Labor %, Food Cost %, Waste %)
+    diffStr = `${absDiff.toFixed(1)}%`;
+  }
+
+  // For higher-is-better: positive diff → above target (good), negative → below target (bad)
+  // For lower-is-better : positive diff → below target (good), negative → above target (bad)
+  const direction = higherIsBetter
+    ? (isGood ? 'above target' : 'below target')
+    : (isGood ? 'below target' : 'above target');
+
+  return { label: `${diffStr} ${direction}`, isGood };
 }
 
 /* ══════════════════════════════════════════════════════════════════════
@@ -372,9 +399,9 @@ function StatusRing({ fill = 0, status = 'gray', size = 148, children }) {
 function KPICard({ kpi, actual, target, yellowThreshold, higherIsBetter, loading }) {
   const status   = loading ? 'gray' : kpiStatus(actual, target, yellowThreshold, higherIsBetter);
   const fill     = loading ? 0     : ringFill(actual, target, higherIsBetter);
-  const pct      = loading ? null  : pctOfTarget(actual, target, higherIsBetter);
+  const varInfo  = loading ? null : varianceBadge(actual, target, higherIsBetter, kpi);
   const color    = CLR[status];
-  const pctLabel = pct == null ? null : pct >= 100 ? `▲ ${(pct - 100).toFixed(1)}% above` : `${pct.toFixed(1)}% of target`;
+  const badgeClr = varInfo ? (varInfo.isGood ? CLR.green : CLR.red) : color;
 
   return (
     <div style={{
@@ -402,9 +429,9 @@ function KPICard({ kpi, actual, target, yellowThreshold, higherIsBetter, loading
         )}
       </StatusRing>
 
-      {!loading && pctLabel && (
-        <div style={{ fontSize: 12, fontWeight: 700, color, background: `${color}18`, border: `1px solid ${color}38`, padding: '3px 12px', borderRadius: 20 }}>
-          {pctLabel}
+      {!loading && varInfo && (
+        <div style={{ fontSize: 12, fontWeight: 700, color: badgeClr, background: `${badgeClr}18`, border: `1px solid ${badgeClr}38`, padding: '3px 12px', borderRadius: 20 }}>
+          {varInfo.label}
         </div>
       )}
       {loading && <div className="skeleton" style={{ width: 80, height: 22 }} />}
