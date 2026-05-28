@@ -108,7 +108,10 @@ const F = {
    ══════════════════════════════════════════════════════════════════════ */
 const TF = {
   name:            ['Name', 'KPI', 'KPI Name', 'Metric', 'Label', 'KPI Label'],
-  target:          ['Target', 'Target Value', 'Goal', 'KPI Target', 'Budget', 'Value'],
+  // Two target columns exist: "Target Value in $" (SPLH, Avg Check, Sales)
+  // and "% Target Value" (Labor %, Food Cost %, Waste %). Both are listed;
+  // buildTargets uses first-valid-number logic to pick whichever is populated.
+  target:          ['Target Value in $', '% Target Value', 'Target', 'Target Value', 'Goal', 'KPI Target', 'Budget', 'Value'],
   yellowThreshold: ['Yellow Threshold', 'Yellow Alert', 'Warning Threshold', 'Threshold', 'Yellow', 'Warning', 'Alert'],
   higherIsBetter:  ['Higher is Better', 'Higher Is Better', 'Increasing', 'Higher', 'Direction'],
 };
@@ -170,14 +173,25 @@ function buildTargets(records) {
   records.forEach((r, i) => console.log(`Record ${i + 1}:`, { ...r.fields }));
   console.groupEnd();
 
+  /* First-valid-number lookup: iterates candidates and returns the first
+     that produces a finite number, skipping fields that are blank/null. */
+  function firstValidNum(rec, candidates) {
+    for (const candidate of candidates) {
+      const raw = getField(rec, [candidate]);
+      const v   = parseFloat(raw);
+      if (!isNaN(v)) return v;
+    }
+    return NaN;
+  }
+
   const map = {};
   for (const rec of records) {
     const name = getField(rec, TF.name);
     if (!name || typeof name !== 'string') continue;
     const key = name.trim();
     map[key] = {
-      target:          parseFloat(getField(rec, TF.target)),
-      yellowThreshold: parseFloat(getField(rec, TF.yellowThreshold)),
+      target:          firstValidNum(rec, TF.target),
+      yellowThreshold: firstValidNum(rec, TF.yellowThreshold),
       higherIsBetter:  !!getField(rec, TF.higherIsBetter),
     };
   }
@@ -192,9 +206,10 @@ function buildTargets(records) {
     console.log('[SCG Ops OS] Resolved targets map (pre-scale):', map);
   }
 
-  /* Fix 1 — KPI Targets table stores percentage-type fields as decimals (0.25 = 25%).
-     Multiply target and yellowThreshold by 100 for these KPIs before use. */
-  const DECIMAL_KPIS = new Set([KPI.LABOR, KPI.FOOD_COST, KPI.WASTE, KPI.SPLH]);
+  /* "% Target Value" stores percentages as decimals (0.25 = 25%).
+     Multiply ×100 for percentage-type KPIs only.
+     SPLH and Avg Check use "Target Value in $" (already in real units — no scaling). */
+  const DECIMAL_KPIS = new Set([KPI.LABOR, KPI.FOOD_COST, KPI.WASTE]);
   for (const key of Object.keys(map)) {
     if (DECIMAL_KPIS.has(key)) {
       if (!isNaN(map[key].target))          map[key].target          *= 100;
