@@ -189,14 +189,37 @@ function buildTargets(records) {
       'Field names found above — update TF.name / TF.target / etc. to match.'
     );
   } else {
-    console.log('[SCG Ops OS] Resolved targets map:', map);
+    console.log('[SCG Ops OS] Resolved targets map (pre-scale):', map);
   }
+
+  /* Fix 1 — KPI Targets table stores percentage-type fields as decimals (0.25 = 25%).
+     Multiply target and yellowThreshold by 100 for these KPIs before use. */
+  const DECIMAL_KPIS = new Set([KPI.LABOR, KPI.FOOD_COST, KPI.WASTE, KPI.SPLH]);
+  for (const key of Object.keys(map)) {
+    if (DECIMAL_KPIS.has(key)) {
+      if (!isNaN(map[key].target))          map[key].target          *= 100;
+      if (!isNaN(map[key].yellowThreshold)) map[key].yellowThreshold *= 100;
+    }
+  }
+  console.log('[SCG Ops OS] Resolved targets map (post-scale):', map);
   return map;
 }
 
 /* ══════════════════════════════════════════════════════════════════════
    DATE HELPERS
    ══════════════════════════════════════════════════════════════════════ */
+/* Fix 3 — try multiple common names for the Sales Plan/Budget column */
+const SALES_BUDGET_VARIANTS = [
+  'Sales Plan/Budget', 'Sales Plan', 'Budget', 'Sales Budget',
+  'Daily Budget', 'Revenue Target', 'Sales Target', 'Plan',
+];
+function getSalesBudget(record) {
+  for (const name of SALES_BUDGET_VARIANTS) {
+    const v = parseFloat(record.fields[name]);
+    if (!isNaN(v) && v > 0) return v;
+  }
+  return 0;
+}
 const todayLocal  = () => { const d = new Date(); d.setHours(0,0,0,0); return d; };
 const isoStr      = d   => d.toISOString().slice(0, 10);
 const weekMonday  = d   => { const r = new Date(d), day = r.getDay(); r.setDate(r.getDate() - (day === 0 ? 6 : day - 1)); return r; };
@@ -215,10 +238,24 @@ function computeMetrics(records, period, selectedDate) {
     if (!selectedDate) return null;
     rows = records.filter(r => r.fields[F.date] === selectedDate);
   } else {
+    /* Fix 2 — WTD/MTD: try the current real period first.
+       If there are no records (data is historical), fall back to the
+       most recent week / month that actually has records in Airtable. */
     const now   = todayLocal();
-    const start = isoStr(period === 'wtd' ? weekMonday(now) : monthFirst(now));
-    const end   = isoStr(now);
+    let start = isoStr(period === 'wtd' ? weekMonday(now) : monthFirst(now));
+    let end   = isoStr(now);
     rows = records.filter(r => { const d = r.fields[F.date]; return d && d >= start && d <= end; });
+
+    if (!rows.length) {
+      const allDates = records.map(r => r.fields[F.date]).filter(Boolean).sort();
+      const latestDate = allDates[allDates.length - 1];
+      if (latestDate) {
+        const latestD = new Date(latestDate + 'T00:00:00');
+        start = isoStr(period === 'wtd' ? weekMonday(latestD) : monthFirst(latestD));
+        end   = latestDate;
+        rows = records.filter(r => { const d = r.fields[F.date]; return d && d >= start && d <= end; });
+      }
+    }
   }
   if (!rows.length) return null;
 
@@ -228,7 +265,8 @@ function computeMetrics(records, period, selectedDate) {
 
   /* Always sum these */
   const grossSales   = sum(F.grossSales);
-  const salesBudget  = sum(F.salesBudget);   // per-day budget, summed over period
+  /* Fix 3 — use multi-variant lookup for the sales budget field */
+  const salesBudget  = rows.reduce((a, r) => a + getSalesBudget(r), 0);
   const laborCost    = sum(F.laborCost);
   const laborHours   = sum(F.laborHours);
   const transactions = sum(F.transactions);
