@@ -91,20 +91,28 @@ const CONFIG = {
 
 /* ══════════════════════════════════════════════════════════════════════
    FIELD MAPPINGS — "Daily Sales & Labor" table
-   Edit these strings to match your exact Airtable column names.
+   Exact field names as returned by the Airtable API.
    ══════════════════════════════════════════════════════════════════════ */
 const F = {
   date:         'Date',
   grossSales:   'Gross Sales',
-  salesBudget:  'Sales Plan/Budget',   // daily sales target / budget
+  salesBudget:  'Sales Plan / Budget',
   laborCost:    'Labor Cost',
   laborHours:   'Labor Hours',
-  laborPct:     'Labor %',
+  laborPct:     'Labor Percentage',
+  splh:         'SPLH',
+  avgCheck:     'Average Ticket',
+  transactions: 'Transaction Count',
+  storeNum:     'Store #',        // lookup from Store Locations table (returns array)
+  // LY comparison fields
+  lyGrossSales: 'LY Gross Sales',
+  lyLaborPct:   'LY Labor Pct',
+  lyLaborHours: 'LY Hours',
+  lySplh:       'LY SPLH',
+  lyAvgCheck:   'LY Avg Ticket',
+  // Kept for backward compatibility — hidden by Fix 5 if no data
   foodCostPct:  'Food Cost %',
   wastePct:     'Waste %',
-  splh:         'SPLH',
-  avgCheck:     'Avg Check',
-  transactions: 'Transaction Count',
 };
 
 /* ══════════════════════════════════════════════════════════════════════
@@ -124,12 +132,13 @@ const TF = {
 
 /* KPI display names — must match the "Name" field values in KPI Targets table */
 const KPI = {
-  SALES:     'Sales',
-  LABOR:     'Labor %',
-  FOOD_COST: 'Food Cost %',
-  WASTE:     'Waste %',
-  SPLH:      'SPLH',
-  AVG_CHECK: 'Avg Check',
+  SALES:      'Sales',
+  LABOR:      'Labor %',
+  LABOR_HRS:  'Labor Hours',
+  FOOD_COST:  'Food Cost %',  // hidden if no data in Daily Sales table
+  WASTE:      'Waste %',      // hidden if no data in Daily Sales table
+  SPLH:       'SPLH',
+  AVG_CHECK:  'Avg Check',
 };
 
 /* ══════════════════════════════════════════════════════════════════════
@@ -301,28 +310,34 @@ function computeMetrics(records, period, selectedDate) {
 
   const n   = rows.length;
   const sum = k => rows.reduce((a, r) => a + (parseFloat(r.fields[k]) || 0), 0);
-  const avg = k => sum(k) / n;
+  const avg = k => { const s = sum(k); return s === 0 ? null : s / n; };
 
-  /* Always sum these */
+  /* TY totals */
   const grossSales   = sum(F.grossSales);
-  /* Sales budget summed across all rows in the period (daily/WTD/MTD). */
   const salesBudget  = rows.reduce((a, r) => a + getSalesBudget(r), 0);
   if (salesBudget === 0) console.warn('[SCG Ops OS] salesBudget=0 — check SALES_BUDGET_VARIANTS vs actual field name.');
   const laborCost    = sum(F.laborCost);
-  const laborHours   = sum(F.laborHours);
+  const laborHours   = sum(F.laborHours) || null;
   const transactions = sum(F.transactions);
 
-  /* Averaged for WTD/MTD per spec */
+  /* TY rates — averaged for WTD/MTD */
   let laborPct    = avg(F.laborPct);
   let foodCostPct = avg(F.foodCostPct);
   let wastePct    = avg(F.wastePct);
   let splh        = avg(F.splh);
   let avgCheck    = avg(F.avgCheck);
 
-  /* Fallback: compute from raw totals if stored field is blank/zero */
-  if (!laborPct    && grossSales && laborCost)    laborPct    = (laborCost / grossSales) * 100;
-  if (!splh        && grossSales && laborHours)   splh        = grossSales / laborHours;
-  if (!avgCheck    && grossSales && transactions) avgCheck    = grossSales / transactions;
+  /* Fallback: compute rates from raw totals if stored field is blank */
+  if (!laborPct  && grossSales && laborCost)    laborPct  = (laborCost  / grossSales) * 100;
+  if (!splh      && grossSales && laborHours)   splh      = grossSales  / laborHours;
+  if (!avgCheck  && grossSales && transactions) avgCheck  = grossSales  / transactions;
+
+  /* LY totals — same aggregation logic as TY */
+  const lyGrossSales  = sum(F.lyGrossSales)  || null;
+  const lyLaborHours  = sum(F.lyLaborHours)  || null;
+  let   lyLaborPct    = avg(F.lyLaborPct);
+  let   lySplh        = avg(F.lySplh);
+  let   lyAvgCheck    = avg(F.lyAvgCheck);
 
   /* Date label for display */
   const dates = rows.map(r => r.fields[F.date]).filter(Boolean).sort();
@@ -331,7 +346,11 @@ function computeMetrics(records, period, selectedDate) {
   else if (dates.length >= 2)    dateLabel = `${fmtShort(dates[0])} – ${fmtShort(dates[dates.length - 1])}`;
   else if (dates.length === 1)   dateLabel = fmtShort(dates[0]);
 
-  return { grossSales, salesBudget, laborCost, laborHours, transactions, laborPct, foodCostPct, wastePct, splh, avgCheck, dateLabel };
+  return {
+    grossSales, salesBudget, laborCost, laborHours, transactions,
+    laborPct, foodCostPct, wastePct, splh, avgCheck, dateLabel,
+    lyGrossSales, lyLaborHours, lyLaborPct, lySplh, lyAvgCheck,
+  };
 }
 
 /* ══════════════════════════════════════════════════════════════════════
@@ -357,40 +376,29 @@ function ringFill(actual, target, higherIsBetter) {
   return Math.min(Math.max(higherIsBetter ? actual / target : target / actual, 0), 1);
 }
 
+/* Format an absolute difference value for display based on KPI type */
+function fmtDiff(absDiff, kpi) {
+  if (kpi === KPI.SALES)
+    return absDiff >= 1000 ? `$${(absDiff / 1000).toFixed(1)}k` : `$${Math.round(absDiff).toLocaleString('en-US')}`;
+  if (kpi === KPI.SPLH || kpi === KPI.AVG_CHECK)
+    return `$${absDiff.toFixed(2)}`;
+  if (kpi === KPI.LABOR_HRS)
+    return `${absDiff.toFixed(1)} hrs`;
+  return `${absDiff.toFixed(1)}%`;
+}
+
 /* Variance badge — raw subtraction only, no division.
    Higher-is-better : diff = actual − target  (positive = good)
    Lower-is-better  : diff = target − actual  (positive = good)
    Badge color is always green (good) / red (bad), independent of the yellow zone. */
 function varianceBadge(actual, target, higherIsBetter, kpi) {
   if (actual == null || target == null || isNaN(actual) || isNaN(target)) return null;
-
   const diff    = higherIsBetter ? actual - target : target - actual;
   const absDiff = Math.abs(diff);
   const isGood  = diff >= 0;
-
-  let diffStr;
-  if (kpi === KPI.SALES) {
-    diffStr = absDiff >= 1000
-      ? `$${(absDiff / 1000).toFixed(1)}k`
-      : `$${Math.round(absDiff).toLocaleString('en-US')}`;
-  } else if (kpi === KPI.SPLH || kpi === KPI.AVG_CHECK) {
-    diffStr = `$${absDiff.toFixed(2)}`;
-  } else {
-    // Percentage-point KPIs (Labor %, Food Cost %, Waste %)
-    diffStr = `${absDiff.toFixed(1)}%`;
-  }
-
-  // Higher-is-better: ▲ green when above, ▼ red when below
-  // Lower-is-better : ▼ green when below (good), ▲ red when above (bad)
-  const arrow = higherIsBetter
-    ? (isGood ? '▲' : '▼')
-    : (isGood ? '▼' : '▲');
-
-  const direction = higherIsBetter
-    ? (isGood ? 'above target' : 'below target')
-    : (isGood ? 'below target' : 'above target');
-
-  return { label: `${arrow} ${diffStr} ${direction}`, isGood };
+  const arrow   = higherIsBetter ? (isGood ? '▲' : '▼') : (isGood ? '▼' : '▲');
+  const dir     = higherIsBetter ? (isGood ? 'above target' : 'below target') : (isGood ? 'below target' : 'above target');
+  return { label: `${arrow} ${fmtDiff(absDiff, kpi)} ${dir}`, isGood };
 }
 
 /* ══════════════════════════════════════════════════════════════════════
@@ -404,6 +412,8 @@ function fmtVal(v, kpi) {
     case KPI.AVG_CHECK:
     case KPI.SPLH:
       return `$${v.toFixed(2)}`;
+    case KPI.LABOR_HRS:
+      return `${v.toFixed(1)} hrs`;
     case KPI.LABOR:
     case KPI.FOOD_COST:
     case KPI.WASTE:
@@ -441,22 +451,51 @@ function StatusRing({ fill = 0, status = 'gray', size = 148, children }) {
 /* ══════════════════════════════════════════════════════════════════════
    COMPONENT: KPICard
    ══════════════════════════════════════════════════════════════════════ */
-function KPICard({ kpi, actual, target, yellowThreshold, higherIsBetter, loading }) {
-  const status   = loading ? 'gray' : kpiStatus(actual, target, yellowThreshold, higherIsBetter);
-  const fill     = loading ? 0     : ringFill(actual, target, higherIsBetter);
-  const varInfo  = loading ? null : varianceBadge(actual, target, higherIsBetter, kpi);
+function KPICard({ kpi, actual, target, yellowThreshold, higherIsBetter, ly, loading }) {
+  const [showLY, setShowLY] = useState(false);
+  const hasLY    = ly != null && !isNaN(ly) && ly !== 0;
+  const dispVal  = (showLY && hasLY) ? ly : actual;
+
+  const status   = loading ? 'gray' : kpiStatus(dispVal, target, yellowThreshold, higherIsBetter);
+  const fill     = loading ? 0      : ringFill(dispVal, target, higherIsBetter);
+  const varInfo  = loading ? null   : varianceBadge(dispVal, target, higherIsBetter, kpi);
   const color    = CLR[status];
   const badgeClr = varInfo ? (varInfo.isGood ? CLR.green : CLR.red) : color;
+
+  /* TY vs LY comparison shown only in LY mode */
+  const vsLY = (!loading && showLY && hasLY && actual != null && !isNaN(actual)) ? (() => {
+    const diff   = actual - ly;
+    const isGood = higherIsBetter ? diff > 0 : diff < 0;
+    const arrow  = diff > 0 ? '▲' : (diff < 0 ? '▼' : '→');
+    return { label: `TY ${arrow} ${fmtDiff(Math.abs(diff), kpi)} vs LY`, isGood };
+  })() : null;
+
+  const Toggle = () => (
+    <div style={{ display: 'flex', gap: 1, background: '#0d0d1b', borderRadius: 7, padding: 2, border: '1px solid var(--border)' }}>
+      {['TY', 'LY'].map(mode => (
+        <button key={mode} onClick={() => setShowLY(mode === 'LY')} style={{
+          padding: '2px 7px', borderRadius: 5, border: 'none', cursor: 'pointer',
+          fontFamily: 'inherit', fontSize: 10, fontWeight: 700, letterSpacing: '0.05em',
+          background: (mode === 'LY') === showLY ? 'var(--purple)' : 'transparent',
+          color:      (mode === 'LY') === showLY ? '#fff'          : 'var(--text-dim)',
+          transition: 'background 0.15s',
+        }}>{mode}</button>
+      ))}
+    </div>
+  );
 
   return (
     <div style={{
       background: 'var(--bg-card)', borderRadius: 18,
       border: `1px solid ${status === 'gray' ? 'var(--border)' : `${color}44`}`,
-      padding: '20px 16px 18px', display: 'flex', flexDirection: 'column',
+      padding: '16px 16px 18px', display: 'flex', flexDirection: 'column',
       alignItems: 'center', gap: 10, transition: 'border-color 0.4s ease',
     }}>
-      <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--text-secondary)' }}>
-        {kpi}
+      <div style={{ display: 'flex', width: '100%', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--text-secondary)' }}>
+          {kpi}
+        </div>
+        {!loading && hasLY && <Toggle />}
       </div>
 
       <StatusRing fill={fill} status={status} size={148}>
@@ -465,10 +504,10 @@ function KPICard({ kpi, actual, target, yellowThreshold, higherIsBetter, loading
         ) : (
           <>
             <div style={{ fontSize: 30, fontWeight: 900, color, lineHeight: 1, letterSpacing: '-0.03em', fontVariantNumeric: 'tabular-nums' }}>
-              {fmtVal(actual, kpi)}
+              {fmtVal(dispVal, kpi)}
             </div>
             <div style={{ fontSize: 11, color: 'var(--text-dim)', fontWeight: 500, marginTop: 3 }}>
-              target {fmtVal(target, kpi)}
+              {showLY ? 'last year' : `target ${fmtVal(target, kpi)}`}
             </div>
           </>
         )}
@@ -477,6 +516,11 @@ function KPICard({ kpi, actual, target, yellowThreshold, higherIsBetter, loading
       {!loading && varInfo && (
         <div style={{ fontSize: 12, fontWeight: 700, color: badgeClr, background: `${badgeClr}18`, border: `1px solid ${badgeClr}38`, padding: '3px 12px', borderRadius: 20 }}>
           {varInfo.label}
+        </div>
+      )}
+      {!loading && vsLY && (
+        <div style={{ fontSize: 11, fontWeight: 600, color: vsLY.isGood ? CLR.green : CLR.red, opacity: 0.85 }}>
+          {vsLY.label}
         </div>
       )}
       {loading && <div className="skeleton" style={{ width: 80, height: 22 }} />}
@@ -786,25 +830,75 @@ function TokenSetupModal({ onSave, isReset }) {
 }
 
 /* ══════════════════════════════════════════════════════════════════════
+   LOCATION HELPERS
+   ══════════════════════════════════════════════════════════════════════ */
+/* Store # is a lookup field — Airtable returns it as an array */
+function getStoreNum(record) {
+  const v = record.fields[F.storeNum];
+  if (v == null) return null;
+  const raw = Array.isArray(v) ? v[0] : v;
+  return raw != null ? String(raw).trim() : null;
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   COMPONENT: LocationFilter
+   Pill buttons for each distinct Store # in the dataset.
+   Hidden when there is only one location.
+   ══════════════════════════════════════════════════════════════════════ */
+function LocationFilter({ stores, selected, onChange }) {
+  if (stores.length < 2) return null;
+  const pill = (label, val, isActive) => (
+    <button key={label} onClick={() => onChange(val)} style={{
+      padding: '7px 16px', borderRadius: 10, border: 'none', cursor: 'pointer',
+      fontFamily: 'inherit', fontWeight: 700, fontSize: 12, letterSpacing: '0.05em',
+      transition: 'all 0.15s ease',
+      background: isActive ? 'var(--purple)' : '#0d0d1b',
+      color:      isActive ? '#fff'          : 'var(--text-dim)',
+      boxShadow:  isActive ? '0 2px 10px #6366f140' : 'none',
+      border:     isActive ? '1px solid transparent' : '1px solid var(--border)',
+    }}>{label}</button>
+  );
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, justifyContent: 'center', marginBottom: 18 }}>
+      {pill('All Locations', null, selected === null)}
+      {stores.map(s => pill(`Store #${s}`, s, selected === s))}
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════
    APP ROOT
    ══════════════════════════════════════════════════════════════════════ */
 function App() {
   /* Token lives in localStorage — never in source code */
-  const [token,        setToken       ] = useState(() => localStorage.getItem(CONFIG.LS_KEY) || '');
-  const [period,       setPeriod      ] = useState('daily');
-  const [salesRows,    setSalesRows   ] = useState([]);
-  const [targetsMap,   setTargetsMap  ] = useState({});
-  const [loading,      setLoading     ] = useState(false);
-  const [error,        setError       ] = useState(null);
-  const [isAuthErr,    setIsAuthErr   ] = useState(false);
-  const [lastUpdated,  setLastUpdated ] = useState(null);
-  const [selectedDate, setSelectedDate] = useState(null);
+  const [token,          setToken         ] = useState(() => localStorage.getItem(CONFIG.LS_KEY) || '');
+  const [period,         setPeriod        ] = useState('daily');
+  const [salesRows,      setSalesRows     ] = useState([]);
+  const [targetsMap,     setTargetsMap    ] = useState({});
+  const [loading,        setLoading       ] = useState(false);
+  const [error,          setError         ] = useState(null);
+  const [isAuthErr,      setIsAuthErr     ] = useState(false);
+  const [lastUpdated,    setLastUpdated   ] = useState(null);
+  const [selectedDate,   setSelectedDate  ] = useState(null);
+  const [selectedStore,  setSelectedStore ] = useState(null); // null = all locations
 
-  /* Sorted newest-first list of dates that have records in Airtable */
-  const availableDates = useMemo(() => {
-    const ds = [...new Set(salesRows.map(r => r.fields[F.date]).filter(Boolean))];
-    return ds.sort().reverse();
+  /* Unique sorted store numbers from all records */
+  const availableStores = useMemo(() => {
+    const nums = [...new Set(salesRows.map(r => getStoreNum(r)).filter(Boolean))];
+    return nums.sort();
   }, [salesRows]);
+
+  /* Records filtered to the selected store (null = all) */
+  const filteredRows = useMemo(() => {
+    if (!selectedStore) return salesRows;
+    return salesRows.filter(r => getStoreNum(r) === selectedStore);
+  }, [salesRows, selectedStore]);
+
+  /* Sorted newest-first list of dates that have records for the active location filter */
+  const availableDates = useMemo(() => {
+    const ds = [...new Set(filteredRows.map(r => r.fields[F.date]).filter(Boolean))];
+    return ds.sort().reverse();
+  }, [filteredRows]);
 
   /* Resolved display date: user's pick if valid, else most recent */
   const resolvedDate = useMemo(() => {
@@ -821,20 +915,25 @@ function App() {
         fetchAll(CONFIG.SALES_TABLE, tok),
         fetchAll(CONFIG.TARGETS_TABLE, tok),
       ]);
-      /* Debug: log every field name from the first Daily Sales record so the
-         exact column names returned by Airtable can be verified in DevTools. */
+      /* Debug: log every field name from the first Daily Sales record */
       if (sales.length > 0) {
         console.group('[SCG Ops OS] Daily Sales & Labor — raw API response (first record)');
-        console.log('All field names:', Object.keys(sales[0].fields));
+        const fieldNames = Object.keys(sales[0].fields);
+        console.log('All field names:', fieldNames);
         console.log('Full first record fields:', { ...sales[0].fields });
+        const lyFields = [F.lyGrossSales, F.lyLaborPct, F.lyLaborHours, F.lySplh, F.lyAvgCheck];
+        lyFields.forEach(f => {
+          const present = fieldNames.some(k => k.trim().toLowerCase() === f.trim().toLowerCase());
+          console.log(`LY field "${f}":`, present ? `✅ found → ${sales[0].fields[f]}` : '⚠️ NOT FOUND in record');
+        });
         const budgetField = SALES_BUDGET_VARIANTS.find(name => {
-          const f = sales[0].fields;
-          if (name in f) return true;
+          if (name in sales[0].fields) return true;
           const norm = name.trim().toLowerCase();
-          return Object.keys(f).some(k => k.trim().toLowerCase() === norm);
+          return fieldNames.some(k => k.trim().toLowerCase() === norm);
         });
         console.log('Sales budget field matched:', budgetField ?? '⚠️  NONE — check SALES_BUDGET_VARIANTS');
         console.log('Sales budget value (first record):', getSalesBudget(sales[0]));
+        console.log('Store # (first record):', getStoreNum(sales[0]));
         console.groupEnd();
       }
       setSalesRows(sales);
@@ -877,24 +976,25 @@ function App() {
   }, [token, doLoad]);
 
   const metrics = useMemo(() =>
-    computeMetrics(salesRows, period, resolvedDate),
-    [salesRows, period, resolvedDate]
+    computeMetrics(filteredRows, period, resolvedDate),
+    [filteredRows, period, resolvedDate]
   );
 
-  /* Build KPI card data.
-     Sales target: sum of daily salesBudget field. Fallback to KPI Targets row.
-     Yellow threshold for Sales: always 95% of that budget (color spec). */
+  /* Build KPI card data — includes LY values for cards that have them.
+     Sales target: sum of daily salesBudget field, fallback to KPI Targets row.
+     Yellow threshold for Sales: 95% of budget. */
   const kpiCards = useMemo(() => {
     const t = name => targetsMap[name] ?? {};
     const salesBudget = metrics?.salesBudget ?? 0;
     const salesTarget = salesBudget > 0 ? salesBudget : (t(KPI.SALES).target ?? null);
     return [
-      { kpi: KPI.SALES,     actual: metrics?.grossSales   ?? null, target: salesTarget, yellowThreshold: salesTarget ? salesTarget * 0.95 : null, higherIsBetter: true },
-      { kpi: KPI.LABOR,     actual: metrics?.laborPct     ?? null, ...t(KPI.LABOR)     },
-      { kpi: KPI.FOOD_COST, actual: metrics?.foodCostPct  ?? null, ...t(KPI.FOOD_COST) },
-      { kpi: KPI.WASTE,     actual: metrics?.wastePct     ?? null, ...t(KPI.WASTE)     },
-      { kpi: KPI.SPLH,      actual: metrics?.splh         ?? null, ...t(KPI.SPLH)      },
-      { kpi: KPI.AVG_CHECK, actual: metrics?.avgCheck     ?? null, ...t(KPI.AVG_CHECK) },
+      { kpi: KPI.SALES,      actual: metrics?.grossSales  ?? null, target: salesTarget, yellowThreshold: salesTarget ? salesTarget * 0.95 : null, higherIsBetter: true, ly: metrics?.lyGrossSales  ?? null },
+      { kpi: KPI.LABOR,      actual: metrics?.laborPct    ?? null, ...t(KPI.LABOR),                                                                                       ly: metrics?.lyLaborPct    ?? null },
+      { kpi: KPI.LABOR_HRS,  actual: metrics?.laborHours  ?? null, ...t(KPI.LABOR_HRS),                                                                                   ly: metrics?.lyLaborHours  ?? null },
+      { kpi: KPI.FOOD_COST,  actual: metrics?.foodCostPct ?? null, ...t(KPI.FOOD_COST)  },
+      { kpi: KPI.WASTE,      actual: metrics?.wastePct    ?? null, ...t(KPI.WASTE)      },
+      { kpi: KPI.SPLH,       actual: metrics?.splh        ?? null, ...t(KPI.SPLH),                                                                                         ly: metrics?.lySplh        ?? null },
+      { kpi: KPI.AVG_CHECK,  actual: metrics?.avgCheck    ?? null, ...t(KPI.AVG_CHECK),                                                                                    ly: metrics?.lyAvgCheck    ?? null },
     ];
   }, [metrics, targetsMap]);
 
@@ -927,9 +1027,11 @@ function App() {
       <main style={{ flex: 1, padding: '20px 20px 32px', maxWidth: 980, width: '100%', margin: '0 auto' }}>
         {error && !isAuthErr && <ErrorBanner message={error} onRetry={() => doLoad(token)} />}
 
-        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 22 }}>
+        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 16 }}>
           <PeriodToggle value={period} onChange={setPeriod} />
         </div>
+
+        <LocationFilter stores={availableStores} selected={selectedStore} onChange={setSelectedStore} />
 
         <div className="kpi-grid" style={{ marginBottom: 16 }}>
           {visibleCards.map(c => (
