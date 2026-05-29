@@ -37,7 +37,7 @@ export const FIELDS = {
   lyAvgTicket:    'LY Avg Ticket',
   splh:           'SPLH',
   lySplh:         'LY SPLH',
-  location:       'Location',   // linked record → array of record IDs
+  location:       'Location',   // linked record → array of record IDs (auto-detected at runtime)
   storeNum:       'Store #',    // lookup → array
   // Food Cost / Waste (optional fields — may not exist)
   foodCostDollar: 'Food Cost $',
@@ -98,7 +98,7 @@ function colorHex(colorName) {
   return HEX[colorName] || HEX.gray;
 }
 
-function AllLocationsScorecard({ salesRecords, locations, targetsMap, period, selectedDate }) {
+function AllLocationsScorecard({ salesRecords, locations, targetsMap, period, selectedDate, locationFieldName }) {
   if (!locations || locations.length === 0) {
     return (
       <div style={{ color: 'var(--text-secondary)', textAlign: 'center', padding: '40px 0' }}>
@@ -110,9 +110,8 @@ function AllLocationsScorecard({ salesRecords, locations, targetsMap, period, se
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
       {locations.map(loc => {
-        // Filter records for this location
         const locRecords = salesRecords.filter(r => {
-          const locField = r.fields?.[FIELDS.location];
+          const locField = r.fields?.[locationFieldName];
           if (!locField) return false;
           if (Array.isArray(locField)) return locField.includes(loc.id);
           return locField === loc.id;
@@ -238,16 +237,34 @@ export default function App() {
   const { salesRecords, targetsMap, locations, loading, error, lastUpdated, refetch } =
     useAirtableData(selectedLocationId);
 
-  // Filter records by selected location
+  // Auto-detect which field in Daily Sales & Labor holds the linked location record IDs.
+  // Scans up to 20 records for a field whose value is an array containing a known location ID.
+  // This is more reliable than relying on a hardcoded field name.
+  const locationFieldName = useMemo(() => {
+    if (!locations.length || !salesRecords.length) return FIELDS.location;
+    const locationIds = new Set(locations.map(l => l.id));
+    for (const rec of salesRecords.slice(0, 20)) {
+      for (const [key, val] of Object.entries(rec.fields || {})) {
+        if (Array.isArray(val) && val.some(v => typeof v === 'string' && locationIds.has(v))) {
+          console.log('[SCG Ops] Auto-detected location link field:', JSON.stringify(key));
+          return key;
+        }
+      }
+    }
+    console.warn('[SCG Ops] Could not auto-detect location field, falling back to:', FIELDS.location);
+    return FIELDS.location;
+  }, [salesRecords, locations]);
+
+  // Filter records by selected location using the auto-detected field name
   const filteredRecords = useMemo(() => {
     if (!selectedLocationId) return salesRecords;
     return salesRecords.filter(r => {
-      const locField = r.fields?.[FIELDS.location];
+      const locField = r.fields?.[locationFieldName];
       if (!locField) return false;
       if (Array.isArray(locField)) return locField.includes(selectedLocationId);
       return locField === selectedLocationId;
     });
-  }, [salesRecords, selectedLocationId]);
+  }, [salesRecords, selectedLocationId, locationFieldName]);
 
   // Available dates — unique, sorted newest-first
   const availableDates = useMemo(() => {
@@ -369,12 +386,13 @@ export default function App() {
 
       {/* Summary Bar */}
       <SummaryBar
-        metrics={metrics}
+        metrics={showAllLocations ? null : metrics}
         loading={loading}
         period={period}
         availableDates={availableDates}
         selectedDate={resolvedDate}
         onDateSelect={setSelectedDate}
+        showAllLocations={showAllLocations}
       />
 
       {/* Main Content */}
@@ -397,6 +415,7 @@ export default function App() {
               targetsMap={targetsMap}
               period={period}
               selectedDate={resolvedDate}
+              locationFieldName={locationFieldName}
             />
           </div>
         ) : (

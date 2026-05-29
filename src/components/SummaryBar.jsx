@@ -26,7 +26,7 @@ function StatItem({ label, value, loading }) {
   );
 }
 
-export default function SummaryBar({ metrics, loading, period, availableDates, selectedDate, onDateSelect }) {
+export default function SummaryBar({ metrics, loading, period, availableDates, selectedDate, onDateSelect, showAllLocations }) {
   const periodLabel = period === 'daily' ? 'Day' : period === 'wtd' ? 'Week-to-Date' : 'Month-to-Date';
 
   return (
@@ -59,30 +59,42 @@ export default function SummaryBar({ metrics, loading, period, availableDates, s
       />
 
       {/* Divider */}
-      <div style={{ width: '1px', height: '28px', backgroundColor: 'var(--border)' }} />
+      <div style={{ width: '1px', height: '28px', backgroundColor: 'var(--border)', flexShrink: 0 }} />
 
-      {/* Stats */}
-      <StatItem
-        label="Transactions"
-        value={fmt(metrics?.transactions, 'count')}
-        loading={loading}
-      />
-      <StatItem
-        label="Labor Hours"
-        value={fmt(metrics?.laborHours, 'hours')}
-        loading={loading}
-      />
-      <StatItem
-        label="Labor Cost"
-        value={fmt(metrics?.laborCost, 'dollar')}
-        loading={loading}
-      />
-
-      {/* Date range label (for WTD/MTD) */}
-      {metrics?.dateLabel && period !== 'daily' && (
-        <span style={{ fontSize: '11px', color: 'var(--text-dim)', whiteSpace: 'nowrap', marginLeft: 'auto' }}>
-          {metrics.dateLabel}
+      {showAllLocations ? (
+        /* When All Locations is active, stats would be meaningless combined totals — show hint instead */
+        <span style={{
+          fontSize: '12px',
+          color: 'var(--text-dim)',
+          fontStyle: 'italic',
+        }}>
+          Select a location to see detail stats
         </span>
+      ) : (
+        <>
+          <StatItem
+            label="Transactions"
+            value={fmt(metrics?.transactions, 'count')}
+            loading={loading}
+          />
+          <StatItem
+            label="Labor Hours"
+            value={fmt(metrics?.laborHours, 'hours')}
+            loading={loading}
+          />
+          <StatItem
+            label="Labor Cost"
+            value={fmt(metrics?.laborCost, 'dollar')}
+            loading={loading}
+          />
+
+          {/* Date range label (for WTD/MTD) */}
+          {metrics?.dateLabel && period !== 'daily' && (
+            <span style={{ fontSize: '11px', color: 'var(--text-dim)', whiteSpace: 'nowrap', marginLeft: 'auto' }}>
+              {metrics.dateLabel}
+            </span>
+          )}
+        </>
       )}
     </div>
   );
