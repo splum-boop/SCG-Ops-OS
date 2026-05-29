@@ -16,7 +16,7 @@ AIRTABLE_TOKEN: 'YOUR_AIRTABLE_PERSONAL_ACCESS_TOKEN_HERE',
 
 with your actual Personal Access Token from [airtable.com/create/tokens](https://airtable.com/create/tokens).
 
-**Token scopes needed:** `data.records:read` on base `appTxjUklSxnapgJr`
+**Token scopes needed:** `data.records:read` on your Airtable base
 
 > ⚠️ **Security note:** Use a scoped, read-only token limited to this one base.  
 > The token will be visible in the page source. Do not use your account-level API key.
