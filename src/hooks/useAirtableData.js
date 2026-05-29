@@ -44,6 +44,36 @@ async function fetchAll(tableName) {
   return records;
 }
 
+/**
+ * Resolve a human-readable name from a Store Locations record.
+ * Tries the configured FIELDS.locName first, then common Airtable naming
+ * conventions, then falls back to the first plain-string field value found.
+ */
+function resolveLocationName(r) {
+  const fields = r.fields || {};
+
+  // Try configured field name first
+  const configured = fields[FIELDS.locName];
+  if (configured && typeof configured === 'string') return configured;
+
+  // Try common variations used in Airtable
+  const candidates = [
+    'Name', 'Location Name', 'Store Name', 'Location', 'Title',
+    'Store', 'Site Name', 'Site', 'Branch', 'Branch Name',
+  ];
+  for (const key of candidates) {
+    const val = fields[key];
+    if (val && typeof val === 'string') return val;
+  }
+
+  // Fall back to first non-empty plain-string field
+  for (const val of Object.values(fields)) {
+    if (val && typeof val === 'string') return val;
+  }
+
+  return r.id;
+}
+
 export function useAirtableData(selectedLocationId) {
   const [salesRecords, setSalesRecords]   = useState([]);
   const [targetsMap, setTargetsMap]       = useState({});
@@ -70,12 +100,25 @@ export function useAirtableData(selectedLocationId) {
         fetchAll(TABLE_NAMES.storeLocations),
       ]);
 
+      // ── Diagnostic logs — open browser DevTools Console (F12) to read ──────
+      if (locationRecs.length > 0) {
+        console.log('[SCG Ops] Store Locations — record id:', locationRecs[0].id);
+        console.log('[SCG Ops] Store Locations — field names:', Object.keys(locationRecs[0].fields || {}));
+        console.log('[SCG Ops] Store Locations — first record fields:', locationRecs[0].fields);
+      }
+      if (salesRecs.length > 0) {
+        console.log('[SCG Ops] Daily Sales & Labor — first record fields:', salesRecs[0].fields);
+        console.log('[SCG Ops] Daily Sales & Labor — "Location" field raw value:', salesRecs[0].fields?.[FIELDS.location]);
+        console.log('[SCG Ops] Daily Sales & Labor — "Store #" field raw value:', salesRecs[0].fields?.[FIELDS.storeNum]);
+      }
+      // ────────────────────────────────────────────────────────────────────────
+
       setSalesRecords(salesRecs);
       setTargetsMap(buildTargetsMap(targetRecs));
       setLocations(
         locationRecs.map(r => ({
           id:   r.id,
-          name: r.fields?.[FIELDS.locName] || r.id,
+          name: resolveLocationName(r),
         }))
       );
       setLastUpdated(new Date());
