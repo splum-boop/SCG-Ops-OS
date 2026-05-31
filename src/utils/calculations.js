@@ -312,6 +312,21 @@ export function varianceBadge(actual, target, higherIsBetter, kpiName) {
 export function buildTargetsMap(targetRecords) {
   if (!targetRecords || targetRecords.length === 0) return {};
 
+  // ── TEMPORARY DIAGNOSTIC LOGS — remove after field names confirmed ──
+  console.group('[SCG] KPI Targets — raw Airtable response');
+  console.log('Total records:', targetRecords.length);
+  targetRecords.forEach((rec, i) => {
+    console.group(`Record ${i + 1}`);
+    console.log('All field names returned by Airtable:', Object.keys(rec.fields || {}));
+    console.log('Full fields object:', rec.fields);
+    console.groupEnd();
+  });
+  console.log('[SCG] Code is looking up Labor % record using FIELDS.kpiMetric =', JSON.stringify(FIELDS.kpiMetric));
+  console.log('[SCG] Code reads % target using FIELDS.kpiTargetPct =', JSON.stringify(FIELDS.kpiTargetPct));
+  console.log('[SCG] Code reads $ target using FIELDS.kpiTargetDollar =', JSON.stringify(FIELDS.kpiTargetDollar));
+  console.groupEnd();
+  // ── END DIAGNOSTIC LOGS ──
+
   const dollarKpis = new Set([KPI.SPLH, KPI.AVG_CHECK]);
   const map = {};
 
@@ -329,5 +344,6 @@ export function buildTargetsMap(targetRecords) {
     };
   }
 
+  console.log('[SCG] Resolved targetsMap after buildTargetsMap:', JSON.parse(JSON.stringify(map)));
   return map;
 }
