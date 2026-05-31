@@ -44,9 +44,9 @@ export const FIELDS = {
   wastePct:       'Waste %',
   // KPI Targets
   kpiMetric:         'Metric',
-  kpiTargetPct:      'Target Value (%)',
-  kpiYellowPct:      'Yellow Threshold (%)',
-  kpiRedPct:         'Red Alert (%)',
+  kpiTargetPct:      '% Target Value',
+  kpiYellowPct:      '% Yellow Threshold',
+  kpiRedPct:         '% Red Alert',
   kpiTargetDollar:   'Target Value in $',
   kpiYellowDollar:   'Yellow Threshold in $',
   kpiRedDollar:      'Red Alert in $',
