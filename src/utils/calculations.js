@@ -307,43 +307,49 @@ export function varianceBadge(actual, target, higherIsBetter, kpiName) {
 
 /**
  * Build targetsMap from KPI Targets records.
- * Dollar KPIs: SPLH, Avg Check
+ *
+ * Two record formats exist in the same table:
+ *   Dollar records (Avg Check, SPLH): fields "Target Value in $",
+ *     "Yellow Threshold in $", "Red Alert in $", "Higher is Better"
+ *   Percentage records (Labor %, Food Cost %, Waste %, Sales): fields
+ *     "Target Value", "Yellow Threshold", "Red Alert", "Name"
+ *     Values are decimals (0.25 = 25%) — multiply by 100 before use.
+ *
+ * Detection: if "Target Value in $" key exists on the record → dollar format.
+ * Name lookup: try "Metric" first, then "Name".
  */
 export function buildTargetsMap(targetRecords) {
   if (!targetRecords || targetRecords.length === 0) return {};
 
-  // ── TEMPORARY DIAGNOSTIC LOGS — remove after field names confirmed ──
-  console.group('[SCG] KPI Targets — raw Airtable response');
-  console.log('Total records:', targetRecords.length);
-  targetRecords.forEach((rec, i) => {
-    console.group(`Record ${i + 1}`);
-    console.log('All field names returned by Airtable:', Object.keys(rec.fields || {}));
-    console.log('Full fields object:', rec.fields);
-    console.groupEnd();
-  });
-  console.log('[SCG] Code is looking up Labor % record using FIELDS.kpiMetric =', JSON.stringify(FIELDS.kpiMetric));
-  console.log('[SCG] Code reads % target using FIELDS.kpiTargetPct =', JSON.stringify(FIELDS.kpiTargetPct));
-  console.log('[SCG] Code reads $ target using FIELDS.kpiTargetDollar =', JSON.stringify(FIELDS.kpiTargetDollar));
-  console.groupEnd();
-  // ── END DIAGNOSTIC LOGS ──
-
-  const dollarKpis = new Set([KPI.SPLH, KPI.AVG_CHECK]);
   const map = {};
 
   for (const rec of targetRecords) {
     const f = rec.fields || {};
-    const metric = f[FIELDS.kpiMetric];
-    if (!metric) continue;
 
-    const isDollar = dollarKpis.has(metric);
-    map[metric] = {
-      target:         isDollar ? safeNum(f[FIELDS.kpiTargetDollar])  : safeNum(f[FIELDS.kpiTargetPct]),
-      yellowThreshold: isDollar ? safeNum(f[FIELDS.kpiYellowDollar]) : safeNum(f[FIELDS.kpiYellowPct]),
-      redThreshold:    isDollar ? safeNum(f[FIELDS.kpiRedDollar])     : safeNum(f[FIELDS.kpiRedPct]),
-      higherIsBetter: !!f[FIELDS.kpiHigherIsBetter],
-    };
+    // Identify which record this is — try "Metric" then "Name"
+    const metric = f['Metric'] ?? f['Name'];
+    if (!metric || typeof metric !== 'string') continue;
+
+    const isDollar = 'Target Value in $' in f;
+
+    if (isDollar) {
+      map[metric.trim()] = {
+        target:          safeNum(f['Target Value in $']),
+        yellowThreshold: safeNum(f['Yellow Threshold in $']),
+        redThreshold:    safeNum(f['Red Alert in $']),
+        higherIsBetter:  !!f['Higher is Better'],
+      };
+    } else {
+      // Percentage records store decimals — scale ×100
+      const scale = v => { const n = safeNum(v); return isNaN(n) ? NaN : n * 100; };
+      map[metric.trim()] = {
+        target:          scale(f['Target Value']),
+        yellowThreshold: scale(f['Yellow Threshold']),
+        redThreshold:    scale(f['Red Alert']),
+        higherIsBetter:  !!f['Higher is Better'],
+      };
+    }
   }
 
-  console.log('[SCG] Resolved targetsMap after buildTargetsMap:', JSON.parse(JSON.stringify(map)));
   return map;
 }
