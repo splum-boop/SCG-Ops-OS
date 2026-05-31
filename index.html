@@ -117,8 +117,9 @@ const TF = {
   // Two target columns exist: "Target Value in $" (SPLH, Avg Check, Sales)
   // and "% Target Value" (Labor %, Food Cost %, Waste %). Both are listed;
   // buildTargets uses first-valid-number logic to pick whichever is populated.
-  target:          ['Target Value in $', '% Target Value', 'Target', 'Target Value', 'Goal', 'KPI Target', 'Budget', 'Value'],
-  yellowThreshold: ['Yellow Threshold', 'Yellow Alert', 'Warning Threshold', 'Threshold', 'Yellow', 'Warning', 'Alert'],
+  target:          ['% Target Value', 'Target Value in $', 'Target', 'Target Value', 'Goal', 'KPI Target', 'Budget', 'Value'],
+  yellowThreshold: ['% Yellow Threshold', 'Yellow Threshold in $', 'Yellow Threshold', 'Yellow Alert', 'Warning Threshold', 'Threshold', 'Yellow', 'Warning', 'Alert'],
+  redAlert:        ['% Red Alert', 'Red Alert in $', 'Red Alert', 'Red Threshold', 'Alert', 'Red'],
   higherIsBetter:  ['Higher is Better', 'Higher Is Better', 'Increasing', 'Higher', 'Direction'],
 };
 
