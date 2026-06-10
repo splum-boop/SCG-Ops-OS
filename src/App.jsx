@@ -235,7 +235,6 @@ export default function App() {
   const [period, setPeriod] = useState(CONFIG.DEFAULT_PERIOD);
   const [selectedDate, setSelectedDate] = useState(null);
   const [selectedLocationId, setSelectedLocationId] = useState(null);
-  const [invoicePeriod, setInvoicePeriod] = useState('today');
 
   const { salesRecords, targetsMap, locations, loading, error, lastUpdated, refetch } =
     useAirtableData(selectedLocationId);
@@ -403,8 +402,8 @@ export default function App() {
       <InvoicePanels
         invoiceRecords={invoiceRecords}
         invoiceLoading={invoiceLoading}
-        invoicePeriod={invoicePeriod}
-        onInvoicePeriodChange={setInvoicePeriod}
+        invoicePeriod={period}
+        selectedLocationId={selectedLocationId}
       />
 
       {/* Main Content */}

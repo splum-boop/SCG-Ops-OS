@@ -15,12 +15,6 @@ const STORES = [
   { id: 'recCDNFEHS1bgH8lU', name: 'Miller Catering' },
 ];
 
-const PERIODS = [
-  { value: 'today', label: 'Today' },
-  { value: 'wtd',   label: 'WTD' },
-  { value: 'mtd',   label: 'MTD' },
-];
-
 function fmtDollar(v) {
   return `$${(v || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
@@ -32,7 +26,7 @@ function filterByPeriod(records, period) {
   let startStr;
   if (period === 'wtd') startStr = weekMonday(now);
   else if (period === 'mtd') startStr = monthFirst(now);
-  else startStr = todayStr;
+  else startStr = todayStr; // 'daily'
 
   return records.filter(r => {
     const d = r.fields?.[FIELDS.receivedDate];
@@ -65,32 +59,6 @@ function computeStoreMetrics(records, storeId) {
     exceptions: { count: exceptionRows.length, sum: sumAmount(exceptionRows) },
     unreadable: { count: unreadableRows.length },
   };
-}
-
-function InvoicePeriodToggle({ value, onChange }) {
-  return (
-    <div style={{ display: 'flex', gap: '4px', backgroundColor: 'var(--bg-card)', padding: '4px', borderRadius: '8px', border: '1px solid var(--border)' }}>
-      {PERIODS.map(p => (
-        <button
-          key={p.value}
-          onClick={() => onChange(p.value)}
-          style={{
-            padding: '6px 16px',
-            borderRadius: '6px',
-            border: 'none',
-            cursor: 'pointer',
-            fontWeight: 600,
-            fontSize: '13px',
-            transition: 'all 0.15s ease',
-            backgroundColor: value === p.value ? 'var(--color-purple)' : 'transparent',
-            color: value === p.value ? '#fff' : 'var(--text-secondary)',
-          }}
-        >
-          {p.label}
-        </button>
-      ))}
-    </div>
-  );
 }
 
 function MetricRow({ label, value, color, pulsing }) {
@@ -155,7 +123,7 @@ function StoreCard({ store, metrics, loading }) {
   );
 }
 
-export default function InvoicePanels({ invoiceRecords, invoiceLoading, invoicePeriod, onInvoicePeriodChange }) {
+export default function InvoicePanels({ invoiceRecords, invoiceLoading, invoicePeriod, selectedLocationId }) {
   const filteredRecords = useMemo(
     () => filterByPeriod(invoiceRecords || [], invoicePeriod),
     [invoiceRecords, invoicePeriod]
@@ -184,9 +152,16 @@ export default function InvoicePanels({ invoiceRecords, invoiceLoading, invoiceP
         }
       `}</style>
 
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '12px' }}>
-        <InvoicePeriodToggle value={invoicePeriod} onChange={onInvoicePeriodChange} />
-      </div>
+      <h2 style={{
+        fontSize: '13px',
+        fontWeight: 600,
+        color: 'var(--text-secondary)',
+        textTransform: 'uppercase',
+        letterSpacing: '1px',
+        marginBottom: '14px',
+      }}>
+        Invoice Overview
+      </h2>
 
       <div className="invoice-cards-row">
         {STORES.map(store => (
