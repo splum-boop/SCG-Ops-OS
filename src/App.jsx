@@ -1,12 +1,14 @@
 import React, { useState, useMemo } from 'react';
 import { useAirtableData } from './hooks/useAirtableData.js';
 import { useInvoiceData } from './hooks/useInvoiceData.js';
+import { useVendorData } from './hooks/useVendorData.js';
 import { getPeriodRows, aggregateRows, getKpiColor, fmtVal, buildTargetsMap } from './utils/calculations.js';
 import KPICard from './components/KPICard.jsx';
 import PeriodToggle from './components/PeriodToggle.jsx';
 import LocationSelector from './components/LocationSelector.jsx';
 import SummaryBar from './components/SummaryBar.jsx';
 import InvoicePanels from './components/InvoicePanels.jsx';
+import VendorSchedule from './components/VendorSchedule.jsx';
 
 // ── Auto-refresh ──────────────────────────────────────────────────────────────
 export const CONFIG = {
@@ -241,6 +243,8 @@ export default function App() {
 
   const { invoiceRecords, invoiceLoading } = useInvoiceData();
 
+  const { vendorRecords, vendorLoading } = useVendorData();
+
   // Auto-detect which field in Daily Sales & Labor holds the linked location record IDs.
   // Scans up to 20 records for a field whose value is an array containing a known location ID.
   // This is more reliable than relying on a hardcoded field name.
@@ -403,6 +407,12 @@ export default function App() {
         invoiceRecords={invoiceRecords}
         invoiceLoading={invoiceLoading}
         invoicePeriod={period}
+        selectedLocationId={selectedLocationId}
+      />
+
+      <VendorSchedule
+        vendorRecords={vendorRecords}
+        vendorLoading={vendorLoading}
         selectedLocationId={selectedLocationId}
       />
 
