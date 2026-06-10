@@ -9,7 +9,7 @@ const FIELDS = {
   paymentTriggered: 'Payment Triggered',
 };
 
-const STORES = [
+const STORE_MAP = [
   { id: 'rec5IYj1Mt8jqmX5Y', name: 'Riverside Convenience & Gas' },
   { id: 'rec4RPWrtrNQKSGcX', name: 'Midtown Grille' },
   { id: 'recCDNFEHS1bgH8lU', name: 'Miller Catering' },
@@ -73,7 +73,7 @@ function MetricRow({ label, value, color, pulsing }) {
   );
 }
 
-function StoreCard({ store, metrics, loading }) {
+function StoreCard({ store, metrics, loading, fullWidth }) {
   const { processed, pending, exceptions, unreadable } = metrics;
 
   return (
@@ -85,7 +85,7 @@ function StoreCard({ store, metrics, loading }) {
       display: 'flex',
       flexDirection: 'column',
       gap: '10px',
-      flex: '1 1 0',
+      flex: fullWidth ? '1 1 100%' : '1 1 0',
       minWidth: 0,
     }}>
       <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '4px' }}>
@@ -129,6 +129,10 @@ export default function InvoicePanels({ invoiceRecords, invoiceLoading, invoiceP
     [invoiceRecords, invoicePeriod]
   );
 
+  const visibleStores = selectedLocationId
+    ? STORE_MAP.filter(s => s.id === selectedLocationId)
+    : STORE_MAP;
+
   return (
     <div style={{ padding: '16px 24px', borderBottom: '1px solid var(--border)' }}>
       <style>{`
@@ -164,12 +168,13 @@ export default function InvoicePanels({ invoiceRecords, invoiceLoading, invoiceP
       </h2>
 
       <div className="invoice-cards-row">
-        {STORES.map(store => (
+        {visibleStores.map(store => (
           <StoreCard
             key={store.id}
             store={store}
             metrics={computeStoreMetrics(filteredRecords, store.id)}
             loading={invoiceLoading}
+            fullWidth={visibleStores.length === 1}
           />
         ))}
       </div>
