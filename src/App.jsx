@@ -1,10 +1,12 @@
 import React, { useState, useMemo } from 'react';
 import { useAirtableData } from './hooks/useAirtableData.js';
+import { useInvoiceData } from './hooks/useInvoiceData.js';
 import { getPeriodRows, aggregateRows, getKpiColor, fmtVal, buildTargetsMap } from './utils/calculations.js';
 import KPICard from './components/KPICard.jsx';
 import PeriodToggle from './components/PeriodToggle.jsx';
 import LocationSelector from './components/LocationSelector.jsx';
 import SummaryBar from './components/SummaryBar.jsx';
+import InvoicePanels from './components/InvoicePanels.jsx';
 
 // ── Auto-refresh ──────────────────────────────────────────────────────────────
 export const CONFIG = {
@@ -233,9 +235,12 @@ export default function App() {
   const [period, setPeriod] = useState(CONFIG.DEFAULT_PERIOD);
   const [selectedDate, setSelectedDate] = useState(null);
   const [selectedLocationId, setSelectedLocationId] = useState(null);
+  const [invoicePeriod, setInvoicePeriod] = useState('today');
 
   const { salesRecords, targetsMap, locations, loading, error, lastUpdated, refetch } =
     useAirtableData(selectedLocationId);
+
+  const { invoiceRecords, invoiceLoading } = useInvoiceData();
 
   // Auto-detect which field in Daily Sales & Labor holds the linked location record IDs.
   // Scans up to 20 records for a field whose value is an array containing a known location ID.
@@ -393,6 +398,13 @@ export default function App() {
         selectedDate={resolvedDate}
         onDateSelect={setSelectedDate}
         showAllLocations={showAllLocations}
+      />
+
+      <InvoicePanels
+        invoiceRecords={invoiceRecords}
+        invoiceLoading={invoiceLoading}
+        invoicePeriod={invoicePeriod}
+        onInvoicePeriodChange={setInvoicePeriod}
       />
 
       {/* Main Content */}
