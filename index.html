@@ -56,6 +56,18 @@
       .kpi-card-wrap { flex: 0 0 calc(50% - 7px) !important; }
     }
 
+    /* Invoice panels — side by side on desktop, stacked on mobile */
+    .invoice-grid {
+      display: flex;
+      gap: 14px;
+    }
+    @media (max-width: 767px) {
+      .invoice-grid { flex-direction: column; }
+    }
+
+    @keyframes pulse-dot { 0%,100% { opacity: 1; } 50% { opacity: 0.25; } }
+    .pulse-dot { animation: pulse-dot 1.4s ease-in-out infinite; }
+
     @keyframes shimmer { 0%,100%{opacity:.35} 50%{opacity:.65} }
     .skeleton { animation: shimmer 1.6s ease-in-out infinite; background: var(--border); border-radius: 8px; }
 
@@ -83,6 +95,7 @@ const CONFIG = {
   BASE_ID:       'appTxjUklSxnapgJr',
   SALES_TABLE:   'Daily Sales & Labor',
   TARGETS_TABLE: 'KPI Targets',
+  INVOICES_TABLE: 'tblfrLtcI2LLGkdQn',
   BUSINESS_NAME: 'SCG',
   LOCATION_NAME: 'Main Location',
   REFRESH_MS:    5 * 60 * 1000,
@@ -106,6 +119,23 @@ const F = {
   avgCheck:     'Avg Check',
   transactions: 'Transaction Count',
 };
+
+/* ══════════════════════════════════════════════════════════════════════
+   FIELD MAPPINGS — "Invoices" table (tblfrLtcI2LLGkdQn)
+   ══════════════════════════════════════════════════════════════════════ */
+const IF = {
+  status:           'Status',           // fldCG55ofKsKcKCAd
+  totalAmount:      'Total Amount',     // fldIBtuAL9FVJS9PP
+  storeLocation:    'Store Location',   // fldpiTLkjHSpzUeDN
+  receivedDate:     'Received Date',    // fldX03z0Nrf6PSQEk
+  paymentTriggered: 'Payment Triggered',
+};
+
+const INVOICE_STORES = [
+  'Riverside Convenience and Gas',
+  'Midtown Grille',
+  'Miller Catering',
+];
 
 /* ══════════════════════════════════════════════════════════════════════
    KPI TARGETS FIELD AUTO-DETECTION
@@ -155,6 +185,11 @@ async function fetchAll(tableName, token) {
     offset = j.offset;
   } while (offset);
   return all;
+}
+
+/* Fetches all records from the Invoices table — same paging pattern as fetchAll */
+async function fetchInvoices(token) {
+  return fetchAll(CONFIG.INVOICES_TABLE, token);
 }
 
 /* Case-insensitive field lookup — tries each candidate name in order */
@@ -335,6 +370,42 @@ function computeMetrics(records, period, selectedDate) {
 }
 
 /* ══════════════════════════════════════════════════════════════════════
+   INVOICE METRICS AGGREGATION
+   ══════════════════════════════════════════════════════════════════════ */
+/* Filters invoice records to the selected range using the Received Date field */
+function filterInvoicesByRange(records, range) {
+  const now = todayLocal();
+  let start;
+  if (range === 'wtd')      start = isoStr(weekMonday(now));
+  else if (range === 'mtd') start = isoStr(monthFirst(now));
+  else                       start = isoStr(now); // 'today'
+  const end = isoStr(now);
+  return records.filter(r => {
+    const d = r.fields[IF.receivedDate];
+    return d && d >= start && d <= end;
+  });
+}
+
+/* Computes the four invoice metrics for a single store from a set of records */
+function computeInvoiceMetrics(records, store) {
+  const rows = records.filter(r => r.fields[IF.storeLocation] === store);
+
+  const processed   = rows.filter(r => ['CLEAN', 'PAID'].includes(r.fields[IF.status]));
+  const pending      = rows.filter(r => r.fields[IF.status] === 'CLEAN' && !r.fields[IF.paymentTriggered]);
+  const exceptions   = rows.filter(r => ['ANNOTATED', 'Pending Credit Memo'].includes(r.fields[IF.status]));
+  const unreadable   = rows.filter(r => r.fields[IF.status] === 'UNREADABLE');
+
+  const sumAmount = arr => arr.reduce((a, r) => a + (parseFloat(r.fields[IF.totalAmount]) || 0), 0);
+
+  return {
+    processed:  { count: processed.length,  sum: sumAmount(processed) },
+    pending:    { count: pending.length,    sum: sumAmount(pending) },
+    exceptions: { count: exceptions.length, sum: sumAmount(exceptions) },
+    unreadable: { count: unreadable.length },
+  };
+}
+
+/* ══════════════════════════════════════════════════════════════════════
    STATUS & COLOR LOGIC
    ══════════════════════════════════════════════════════════════════════ */
 const CLR = { green: '#22c55e', yellow: '#eab308', red: '#ef4444', gray: '#374151' };
@@ -411,6 +482,11 @@ function fmtVal(v, kpi) {
     default:
       return v.toFixed(2);
   }
+}
+
+/* Currency formatter for invoice totals */
+function fmtCurrency(v) {
+  return `$${(v || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 /* ══════════════════════════════════════════════════════════════════════
@@ -638,6 +714,116 @@ function SummaryBar({ metrics, loading, period, availableDates, selectedDate, on
 }
 
 /* ══════════════════════════════════════════════════════════════════════
+   COMPONENT: InvoicePeriodToggle
+   Same visual style as PeriodToggle, with Today/WTD/MTD options.
+   ══════════════════════════════════════════════════════════════════════ */
+function InvoicePeriodToggle({ value, onChange }) {
+  return (
+    <div style={{ display: 'inline-flex', background: '#0d0d1b', borderRadius: 14, padding: 4, border: '1px solid var(--border)', gap: 2 }}>
+      {[{ k: 'today', l: 'Today' }, { k: 'wtd', l: 'WTD' }, { k: 'mtd', l: 'MTD' }].map(({ k, l }) => (
+        <button key={k} onClick={() => onChange(k)} style={{
+          padding: '9px 22px', borderRadius: 10, border: 'none', cursor: 'pointer',
+          fontFamily: 'inherit', fontWeight: 700, fontSize: 13, letterSpacing: '0.06em',
+          transition: 'all 0.18s ease',
+          background: value === k ? 'var(--purple)' : 'transparent',
+          color:      value === k ? '#fff' : 'var(--text-dim)',
+          boxShadow:  value === k ? '0 2px 12px #6366f144' : 'none',
+        }}>{l}</button>
+      ))}
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   COMPONENT: InvoiceStoreCard
+   ══════════════════════════════════════════════════════════════════════ */
+function InvoiceStoreCard({ store, metrics, loading }) {
+  const { processed, pending, exceptions, unreadable } = metrics;
+
+  return (
+    <div style={{
+      background: 'var(--bg-card)', borderRadius: 14, border: '1px solid var(--border)',
+      padding: '16px 20px', flex: '1 1 0', minWidth: 0,
+      display: 'flex', flexDirection: 'column', gap: 12,
+    }}>
+      <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text-primary)' }}>{store}</div>
+
+      {loading ? (
+        <div className="skeleton" style={{ width: '100%', height: 110 }} />
+      ) : (
+        <>
+          {/* Processed */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Processed</div>
+            <div style={{ fontSize: 13, fontWeight: 800, fontVariantNumeric: 'tabular-nums' }}>
+              <span style={{ color: 'var(--text-primary)' }}>{processed.count}</span>
+              {' · '}
+              <span style={{ color: 'var(--green)' }}>{fmtCurrency(processed.sum)}</span>
+            </div>
+          </div>
+
+          {/* Pending Approval */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Pending Approval</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 800, fontVariantNumeric: 'tabular-nums' }}>
+              {pending.count > 0 && (
+                <span className="pulse-dot" style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--yellow)', boxShadow: '0 0 8px var(--yellow)' }} />
+              )}
+              <span style={{ color: 'var(--yellow)' }}>{pending.count}</span>
+              {' · '}
+              <span style={{ color: 'var(--text-primary)' }}>{fmtCurrency(pending.sum)}</span>
+            </div>
+          </div>
+
+          {/* Exceptions */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Exceptions</div>
+            <div style={{ fontSize: 13, fontWeight: 800, fontVariantNumeric: 'tabular-nums', color: exceptions.count > 0 ? 'var(--red)' : 'var(--text-primary)' }}>
+              {exceptions.count} · {fmtCurrency(exceptions.sum)}
+            </div>
+          </div>
+
+          {/* Unreadable */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Unreadable</div>
+            <div style={{ fontSize: 13, fontWeight: 800, fontVariantNumeric: 'tabular-nums', color: unreadable.count > 0 ? 'var(--red)' : 'var(--text-primary)' }}>
+              {unreadable.count}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   COMPONENT: InvoicePanels
+   Per-store invoice processing status, pulled from the Invoices table.
+   ══════════════════════════════════════════════════════════════════════ */
+function InvoicePanels({ invoiceRecords, loading, invoicePeriod, onInvoicePeriodChange }) {
+  const filtered = useMemo(() => filterInvoicesByRange(invoiceRecords, invoicePeriod), [invoiceRecords, invoicePeriod]);
+
+  return (
+    <div style={{ marginTop: 20 }}>
+      <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 14 }}>
+        <InvoicePeriodToggle value={invoicePeriod} onChange={onInvoicePeriodChange} />
+      </div>
+
+      <div className="invoice-grid">
+        {INVOICE_STORES.map(store => (
+          <InvoiceStoreCard
+            key={store}
+            store={store}
+            metrics={computeInvoiceMetrics(filtered, store)}
+            loading={loading}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════
    COMPONENT: Header
    ══════════════════════════════════════════════════════════════════════ */
 function Header({ lastUpdated, loading, onRefresh, onResetToken }) {
@@ -794,6 +980,8 @@ function App() {
   const [period,       setPeriod      ] = useState('daily');
   const [salesRows,    setSalesRows   ] = useState([]);
   const [targetsMap,   setTargetsMap  ] = useState({});
+  const [invoiceRecords, setInvoiceRecords] = useState([]);
+  const [invoicePeriod,  setInvoicePeriod ] = useState('today');
   const [loading,      setLoading     ] = useState(false);
   const [error,        setError       ] = useState(null);
   const [isAuthErr,    setIsAuthErr   ] = useState(false);
@@ -817,9 +1005,10 @@ function App() {
     setError(null);
     setIsAuthErr(false);
     try {
-      const [sales, targets] = await Promise.all([
+      const [sales, targets, invoices] = await Promise.all([
         fetchAll(CONFIG.SALES_TABLE, tok),
         fetchAll(CONFIG.TARGETS_TABLE, tok),
+        fetchInvoices(tok),
       ]);
       /* Debug: log every field name from the first Daily Sales record so the
          exact column names returned by Airtable can be verified in DevTools. */
@@ -839,6 +1028,7 @@ function App() {
       }
       setSalesRows(sales);
       setTargetsMap(buildTargets(targets));
+      setInvoiceRecords(invoices);
       setLastUpdated(new Date());
     } catch (err) {
       console.error('[SCG Ops OS]', err);
@@ -862,6 +1052,7 @@ function App() {
     setIsAuthErr(false);
     setSalesRows([]);
     setTargetsMap({});
+    setInvoiceRecords([]);
     setError(null);
     setLastUpdated(null);
   }, []);
@@ -943,6 +1134,11 @@ function App() {
           metrics={metrics} loading={loading} period={period}
           availableDates={availableDates} selectedDate={resolvedDate}
           onDateSelect={setSelectedDate}
+        />
+
+        <InvoicePanels
+          invoiceRecords={invoiceRecords} loading={loading}
+          invoicePeriod={invoicePeriod} onInvoicePeriodChange={setInvoicePeriod}
         />
       </main>
 
