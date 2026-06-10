@@ -73,7 +73,7 @@ function MetricRow({ label, value, color, pulsing }) {
   );
 }
 
-function StoreCard({ store, metrics, loading, fullWidth }) {
+function StoreCard({ store, metrics, loading, single }) {
   const { processed, pending, exceptions, unreadable } = metrics;
 
   return (
@@ -85,7 +85,10 @@ function StoreCard({ store, metrics, loading, fullWidth }) {
       display: 'flex',
       flexDirection: 'column',
       gap: '10px',
-      flex: fullWidth ? '1 1 100%' : '1 1 0',
+      flex: single ? '0 1 auto' : '1 1 0',
+      width: single ? '100%' : undefined,
+      maxWidth: single ? '400px' : undefined,
+      margin: single ? '0 auto' : undefined,
       minWidth: 0,
     }}>
       <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '4px' }}>
@@ -174,7 +177,7 @@ export default function InvoicePanels({ invoiceRecords, invoiceLoading, invoiceP
             store={store}
             metrics={computeStoreMetrics(filteredRecords, store.id)}
             loading={invoiceLoading}
-            fullWidth={visibleStores.length === 1}
+            single={visibleStores.length === 1}
           />
         ))}
       </div>
