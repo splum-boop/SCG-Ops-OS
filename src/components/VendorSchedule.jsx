@@ -8,7 +8,7 @@ const FIELDS = {
   active:         'Active',
 };
 
-const TODAY = new Date().toLocaleDateString('en-US', { weekday: 'long' });
+const TODAY = new Date().toLocaleDateString('en-US', { weekday: 'long', timeZone: 'America/Chicago' });
 const TODAY_LABEL = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
 
 const sectionLabelStyle = {
@@ -55,8 +55,12 @@ export default function VendorSchedule({ vendorRecords, vendorLoading, selectedL
     );
 
     return {
-      ordersToday: activeVendors.filter(r => (r.fields?.[FIELDS.orderDay] || []).includes(TODAY)),
-      deliveriesToday: activeVendors.filter(r => (r.fields?.[FIELDS.deliveryDay] || []).includes(TODAY)),
+      ordersToday: activeVendors.filter(r =>
+        (r.fields?.[FIELDS.orderDay] || []).some(d => d.toLowerCase() === TODAY.toLowerCase())
+      ),
+      deliveriesToday: activeVendors.filter(r =>
+        (r.fields?.[FIELDS.deliveryDay] || []).some(d => d.toLowerCase() === TODAY.toLowerCase())
+      ),
     };
   }, [vendorRecords, selectedLocationId]);
 

@@ -403,19 +403,6 @@ export default function App() {
         showAllLocations={showAllLocations}
       />
 
-      <InvoicePanels
-        invoiceRecords={invoiceRecords}
-        invoiceLoading={invoiceLoading}
-        invoicePeriod={period}
-        selectedLocationId={selectedLocationId}
-      />
-
-      <VendorSchedule
-        vendorRecords={vendorRecords}
-        vendorLoading={vendorLoading}
-        selectedLocationId={selectedLocationId}
-      />
-
       {/* Main Content */}
       <div style={{ padding: '0 24px' }}>
         {showAllLocations ? (
@@ -471,6 +458,19 @@ export default function App() {
           </div>
         )}
       </div>
+
+      <InvoicePanels
+        invoiceRecords={invoiceRecords}
+        invoiceLoading={invoiceLoading}
+        invoicePeriod={period}
+        selectedLocationId={selectedLocationId}
+      />
+
+      <VendorSchedule
+        vendorRecords={vendorRecords}
+        vendorLoading={vendorLoading}
+        selectedLocationId={selectedLocationId}
+      />
     </div>
   );
 }
