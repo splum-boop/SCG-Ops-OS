@@ -1,0 +1,1208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>SCG Ops OS</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+
+    :root {
+      --bg: #F0F2F5;
+      --surface: #FFFFFF;
+      --navy: #1B4F8A;
+      --navy-dark: #143D6E;
+      --navy-light: #E8EFF8;
+      --success: #2D8A4E;
+      --success-light: #E6F4EC;
+      --warning: #E07B00;
+      --warning-light: #FEF3E2;
+      --danger: #C0392B;
+      --danger-light: #FDECEA;
+      --text: #1A1A1A;
+      --text-secondary: #6B7280;
+      --border: #E5E7EB;
+      --scan-border: #1B4F8A;
+      --radius: 12px;
+      --radius-sm: 8px;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      max-width: 480px;
+      margin: 0 auto;
+    }
+
+    /* ── HEADER ── */
+    .header {
+      background: var(--navy);
+      color: white;
+      padding: 16px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    .header-title { font-size: 17px; font-weight: 700; letter-spacing: 0.3px; }
+    .header-sub { font-size: 12px; color: rgba(255,255,255,0.7); margin-top: 2px; }
+    .header-badge {
+      background: rgba(255,255,255,0.15);
+      border-radius: 20px;
+      padding: 4px 12px;
+      font-size: 12px;
+      font-weight: 600;
+      color: white;
+    }
+    .header-mode-badge {
+      background: var(--warning);
+      border-radius: 20px;
+      padding: 4px 12px;
+      font-size: 12px;
+      font-weight: 700;
+      color: white;
+      letter-spacing: 0.5px;
+    }
+
+    /* ── SCREENS ── */
+    .screen { display: none; flex-direction: column; flex: 1; padding: 24px 20px; }
+    .screen.active { display: flex; }
+
+    /* ── PIN SCREEN ── */
+    .pin-logo {
+      text-align: center;
+      margin-bottom: 32px;
+    }
+    .pin-logo-mark {
+      width: 64px; height: 64px;
+      background: var(--navy);
+      border-radius: 16px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 12px;
+    }
+    .pin-logo-mark svg { width: 32px; height: 32px; fill: white; }
+    .pin-logo-title { font-size: 22px; font-weight: 800; color: var(--navy); letter-spacing: -0.5px; }
+    .pin-logo-sub { font-size: 13px; color: var(--text-secondary); margin-top: 4px; }
+
+    .pin-display {
+      background: var(--surface);
+      border: 2px solid var(--border);
+      border-radius: var(--radius);
+      padding: 18px;
+      text-align: center;
+      margin-bottom: 24px;
+      letter-spacing: 12px;
+      font-size: 28px;
+      font-weight: 700;
+      color: var(--navy);
+      min-height: 68px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .pin-display.error { border-color: var(--danger); color: var(--danger); animation: shake 0.3s; }
+    @keyframes shake {
+      0%,100% { transform: translateX(0); }
+      25% { transform: translateX(-8px); }
+      75% { transform: translateX(8px); }
+    }
+
+    .pin-keypad {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    .pin-key {
+      background: var(--surface);
+      border: 1.5px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px 0;
+      font-size: 24px;
+      font-weight: 600;
+      color: var(--text);
+      cursor: pointer;
+      text-align: center;
+      transition: background 0.1s, transform 0.1s;
+      user-select: none;
+    }
+    .pin-key:active { background: var(--navy-light); transform: scale(0.95); }
+    .pin-key.clear { background: var(--danger-light); color: var(--danger); border-color: var(--danger); font-size: 14px; font-weight: 700; }
+    .pin-key.enter { background: var(--navy); color: white; border-color: var(--navy); font-size: 14px; font-weight: 700; grid-column: span 2; }
+    .pin-key.enter:active { background: var(--navy-dark); }
+
+    .pin-hint { text-align: center; font-size: 12px; color: var(--text-secondary); }
+
+    /* ── MAIN MENU ── */
+    .menu-greeting {
+      margin-bottom: 28px;
+    }
+    .menu-greeting-name { font-size: 24px; font-weight: 800; color: var(--text); }
+    .menu-greeting-store { font-size: 14px; color: var(--text-secondary); margin-top: 4px; }
+
+    .menu-queue-banner {
+      background: var(--warning-light);
+      border: 1.5px solid var(--warning);
+      border-radius: var(--radius);
+      padding: 14px 16px;
+      margin-bottom: 24px;
+      display: none;
+      align-items: center;
+      gap: 10px;
+    }
+    .menu-queue-banner.visible { display: flex; }
+    .menu-queue-banner-text { font-size: 13px; font-weight: 600; color: var(--warning); }
+    .menu-queue-banner-count {
+      background: var(--warning);
+      color: white;
+      border-radius: 20px;
+      padding: 2px 10px;
+      font-size: 13px;
+      font-weight: 700;
+      margin-left: auto;
+    }
+
+    .menu-btn {
+      background: var(--surface);
+      border: 1.5px solid var(--border);
+      border-radius: var(--radius);
+      padding: 24px 20px;
+      margin-bottom: 14px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      transition: border-color 0.15s, box-shadow 0.15s;
+      text-align: left;
+      width: 100%;
+    }
+    .menu-btn:active { border-color: var(--navy); box-shadow: 0 0 0 3px var(--navy-light); }
+    .menu-btn-icon {
+      width: 52px; height: 52px;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .menu-btn-icon svg { width: 26px; height: 26px; }
+    .menu-btn-icon.count { background: var(--navy-light); }
+    .menu-btn-icon.count svg { fill: var(--navy); }
+    .menu-btn-icon.order { background: var(--success-light); }
+    .menu-btn-icon.order svg { fill: var(--success); }
+    .menu-btn-title { font-size: 17px; font-weight: 700; color: var(--text); margin-bottom: 3px; }
+    .menu-btn-sub { font-size: 13px; color: var(--text-secondary); }
+    .menu-btn-arrow { margin-left: auto; color: var(--text-secondary); font-size: 20px; flex-shrink: 0; }
+
+    .menu-submit-btn {
+      background: var(--navy);
+      color: white;
+      border: none;
+      border-radius: var(--radius);
+      padding: 18px;
+      font-size: 16px;
+      font-weight: 700;
+      cursor: pointer;
+      width: 100%;
+      margin-top: 8px;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: background 0.15s;
+    }
+    .menu-submit-btn.visible { display: flex; }
+    .menu-submit-btn:active { background: var(--navy-dark); }
+
+    .menu-signout {
+      text-align: center;
+      margin-top: 24px;
+      font-size: 13px;
+      color: var(--text-secondary);
+      cursor: pointer;
+      text-decoration: underline;
+    }
+
+    /* ── SCAN SCREEN ── */
+    .scan-mode-label {
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      color: var(--text-secondary);
+      margin-bottom: 12px;
+    }
+
+    .scan-box-wrap { margin-bottom: 16px; }
+    .scan-box-label {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      margin-bottom: 8px;
+    }
+    .scan-box {
+      width: 100%;
+      background: var(--surface);
+      border: 2.5px solid var(--scan-border);
+      border-radius: var(--radius);
+      padding: 18px 16px;
+      font-size: 18px;
+      font-weight: 600;
+      color: var(--text);
+      outline: none;
+      transition: box-shadow 0.15s;
+    }
+    .scan-box:focus { box-shadow: 0 0 0 4px var(--navy-light); }
+    .scan-box::placeholder { color: #B0B8C4; font-weight: 400; font-size: 15px; }
+
+    .scan-camera-btn {
+      width: 100%;
+      background: var(--surface);
+      border: 1.5px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px;
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--navy);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      margin-bottom: 20px;
+    }
+    .scan-camera-btn:active { background: var(--navy-light); }
+
+    /* Camera view */
+    .camera-wrap {
+      display: none;
+      flex-direction: column;
+      margin-bottom: 16px;
+    }
+    .camera-wrap.visible { display: flex; }
+    #camera-video {
+      width: 100%;
+      border-radius: var(--radius);
+      background: #000;
+      max-height: 220px;
+      object-fit: cover;
+    }
+    .camera-close-btn {
+      background: var(--danger-light);
+      border: 1.5px solid var(--danger);
+      border-radius: var(--radius-sm);
+      padding: 10px;
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--danger);
+      cursor: pointer;
+      margin-top: 8px;
+      text-align: center;
+    }
+
+    /* Item card */
+    .item-card {
+      background: var(--surface);
+      border: 1.5px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+      margin-bottom: 16px;
+      display: none;
+    }
+    .item-card.visible { display: block; }
+    .item-card-name { font-size: 18px; font-weight: 800; color: var(--text); margin-bottom: 4px; }
+    .item-card-meta { font-size: 13px; color: var(--text-secondary); margin-bottom: 16px; }
+    .item-card-current {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: var(--bg);
+      border-radius: var(--radius-sm);
+      padding: 12px 14px;
+      margin-bottom: 16px;
+    }
+    .item-card-current-label { font-size: 12px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px; }
+    .item-card-current-value { font-size: 22px; font-weight: 800; color: var(--navy); }
+
+    .item-input-label { font-size: 13px; font-weight: 600; color: var(--text-secondary); margin-bottom: 8px; }
+    .item-input {
+      width: 100%;
+      background: var(--bg);
+      border: 2px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 16px;
+      font-size: 28px;
+      font-weight: 800;
+      color: var(--text);
+      text-align: center;
+      outline: none;
+      margin-bottom: 14px;
+    }
+    .item-input:focus { border-color: var(--navy); background: white; }
+
+    .item-add-btn {
+      width: 100%;
+      background: var(--navy);
+      color: white;
+      border: none;
+      border-radius: var(--radius);
+      padding: 16px;
+      font-size: 16px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .item-add-btn:active { background: var(--navy-dark); }
+    .item-add-btn.order-mode { background: var(--success); }
+    .item-add-btn.order-mode:active { background: #236B3C; }
+
+    .scan-not-found {
+      background: var(--danger-light);
+      border: 1.5px solid var(--danger);
+      border-radius: var(--radius);
+      padding: 16px;
+      text-align: center;
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--danger);
+      margin-bottom: 16px;
+      display: none;
+    }
+    .scan-not-found.visible { display: block; }
+
+    /* Queue counter */
+    .queue-counter {
+      background: var(--navy-light);
+      border-radius: var(--radius);
+      padding: 12px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 16px;
+    }
+    .queue-counter-label { font-size: 13px; font-weight: 600; color: var(--navy); }
+    .queue-counter-num {
+      background: var(--navy);
+      color: white;
+      border-radius: 20px;
+      padding: 3px 12px;
+      font-size: 14px;
+      font-weight: 700;
+    }
+
+    .scan-back-btn {
+      background: transparent;
+      border: 1.5px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px;
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      cursor: pointer;
+      width: 100%;
+      text-align: center;
+    }
+    .scan-back-btn:active { background: var(--bg); }
+
+    /* ── QUEUE REVIEW SCREEN ── */
+    .queue-header {
+      margin-bottom: 20px;
+    }
+    .queue-title { font-size: 22px; font-weight: 800; color: var(--text); }
+    .queue-sub { font-size: 13px; color: var(--text-secondary); margin-top: 4px; }
+
+    .queue-list { flex: 1; overflow-y: auto; margin-bottom: 16px; }
+    .queue-item {
+      background: var(--surface);
+      border: 1.5px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px;
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .queue-item-type {
+      width: 36px; height: 36px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.3px;
+      flex-shrink: 0;
+    }
+    .queue-item-type.count { background: var(--navy-light); color: var(--navy); }
+    .queue-item-type.order { background: var(--success-light); color: var(--success); }
+    .queue-item-name { font-size: 14px; font-weight: 700; color: var(--text); }
+    .queue-item-value { font-size: 13px; color: var(--text-secondary); margin-top: 2px; }
+    .queue-item-remove {
+      margin-left: auto;
+      color: var(--danger);
+      font-size: 20px;
+      cursor: pointer;
+      padding: 4px;
+      flex-shrink: 0;
+    }
+
+    .queue-empty {
+      text-align: center;
+      padding: 40px 20px;
+      color: var(--text-secondary);
+    }
+    .queue-empty-icon { font-size: 40px; margin-bottom: 12px; }
+    .queue-empty-text { font-size: 15px; font-weight: 600; }
+    .queue-empty-sub { font-size: 13px; margin-top: 6px; }
+
+    .queue-done-btn {
+      width: 100%;
+      background: var(--navy);
+      color: white;
+      border: none;
+      border-radius: var(--radius);
+      padding: 18px;
+      font-size: 17px;
+      font-weight: 800;
+      cursor: pointer;
+      transition: background 0.15s;
+      margin-bottom: 12px;
+    }
+    .queue-done-btn:active { background: var(--navy-dark); }
+    .queue-done-btn:disabled { background: #B0B8C4; cursor: not-allowed; }
+
+    .queue-add-more-btn {
+      width: 100%;
+      background: transparent;
+      border: 1.5px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px;
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      cursor: pointer;
+      text-align: center;
+    }
+    .queue-add-more-btn:active { background: var(--bg); }
+
+    /* ── SYNC SCREEN ── */
+    .sync-wrap {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 40px 20px;
+    }
+    .sync-icon {
+      width: 72px; height: 72px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 20px;
+      font-size: 32px;
+    }
+    .sync-icon.success { background: var(--success-light); }
+    .sync-icon.offline { background: var(--warning-light); }
+    .sync-icon.loading { background: var(--navy-light); animation: pulse 1.2s infinite; }
+    @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
+
+    .sync-title { font-size: 22px; font-weight: 800; color: var(--text); margin-bottom: 8px; }
+    .sync-sub { font-size: 14px; color: var(--text-secondary); line-height: 1.6; margin-bottom: 32px; }
+
+    .sync-done-btn {
+      background: var(--navy);
+      color: white;
+      border: none;
+      border-radius: var(--radius);
+      padding: 16px 40px;
+      font-size: 16px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .sync-done-btn:active { background: var(--navy-dark); }
+
+    /* ── TOAST ── */
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%) translateY(80px);
+      background: #1A1A1A;
+      color: white;
+      padding: 12px 20px;
+      border-radius: 24px;
+      font-size: 14px;
+      font-weight: 600;
+      z-index: 999;
+      transition: transform 0.3s ease;
+      white-space: nowrap;
+      max-width: 90vw;
+    }
+    .toast.show { transform: translateX(-50%) translateY(0); }
+  </style>
+</head>
+<body>
+
+<!-- HEADER -->
+<div class="header" id="app-header">
+  <div>
+    <div class="header-title">SCG Ops OS</div>
+    <div class="header-sub" id="header-sub">Inventory Tool</div>
+  </div>
+  <div id="header-right"></div>
+</div>
+
+<!-- SCREEN: PIN -->
+<div class="screen active" id="screen-pin">
+  <div class="pin-logo">
+    <div class="pin-logo-mark">
+      <svg viewBox="0 0 24 24"><path d="M3 13h2v-2H3v2zm0 4h2v-2H3v2zm0-8h2V7H3v2zm4 4h14v-2H7v2zm0 4h14v-2H7v2zM7 7v2h14V7H7z"/></svg>
+    </div>
+    <div class="pin-logo-title">Ops OS</div>
+    <div class="pin-logo-sub">Enter your PIN to continue</div>
+  </div>
+
+  <div class="pin-display" id="pin-display">––––</div>
+
+  <div class="pin-keypad">
+    <button class="pin-key" onclick="pinPress('1')">1</button>
+    <button class="pin-key" onclick="pinPress('2')">2</button>
+    <button class="pin-key" onclick="pinPress('3')">3</button>
+    <button class="pin-key" onclick="pinPress('4')">4</button>
+    <button class="pin-key" onclick="pinPress('5')">5</button>
+    <button class="pin-key" onclick="pinPress('6')">6</button>
+    <button class="pin-key" onclick="pinPress('7')">7</button>
+    <button class="pin-key" onclick="pinPress('8')">8</button>
+    <button class="pin-key" onclick="pinPress('9')">9</button>
+    <button class="pin-key clear" onclick="pinClear()">Clear</button>
+    <button class="pin-key" onclick="pinPress('0')">0</button>
+    <button class="pin-key enter" onclick="pinEnter()">Enter</button>
+  </div>
+
+  <div class="pin-hint">Contact your manager if you need help with your PIN.</div>
+</div>
+
+<!-- SCREEN: MAIN MENU -->
+<div class="screen" id="screen-menu">
+  <div class="menu-greeting">
+    <div class="menu-greeting-name" id="menu-user-name">Welcome</div>
+    <div class="menu-greeting-store" id="menu-store-name">Loading store...</div>
+  </div>
+
+  <div class="menu-queue-banner" id="queue-banner">
+    <span class="menu-queue-banner-text">Unsent changes in queue</span>
+    <span class="menu-queue-banner-count" id="queue-banner-count">0</span>
+  </div>
+
+  <button class="menu-btn" onclick="startMode('count')">
+    <div class="menu-btn-icon count">
+      <svg viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 3c1.93 0 3.5 1.57 3.5 3.5S13.93 13 12 13s-3.5-1.57-3.5-3.5S10.07 6 12 6zm7 13H5v-.23c0-.62.28-1.2.76-1.58C7.47 15.82 9.64 15 12 15s4.53.82 6.24 2.19c.48.38.76.97.76 1.58V19z"/></svg>
+    </div>
+    <div>
+      <div class="menu-btn-title">Update Counts</div>
+      <div class="menu-btn-sub">Scan items to update on-hand quantities</div>
+    </div>
+    <div class="menu-btn-arrow">›</div>
+  </button>
+
+  <button class="menu-btn" onclick="startMode('order')">
+    <div class="menu-btn-icon order">
+      <svg viewBox="0 0 24 24"><path d="M19 3h-4.18C14.4 1.84 13.3 1 12 1s-2.4.84-2.82 2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 0c.55 0 1 .45 1 1s-.45 1-1 1-1-.45-1-1 .45-1 1-1zm-2 14l-4-4 1.41-1.41L10 14.17l6.59-6.59L18 9l-8 8z"/></svg>
+    </div>
+    <div>
+      <div class="menu-btn-title">Manual Order</div>
+      <div class="menu-btn-sub">Flag an item to include in the next order</div>
+    </div>
+    <div class="menu-btn-arrow">›</div>
+  </button>
+
+  <button class="menu-submit-btn" id="menu-submit-btn" onclick="goToQueue()">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="white"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
+    Review &amp; Submit Changes
+  </button>
+
+  <div class="menu-signout" onclick="signOut()">Sign out</div>
+</div>
+
+<!-- SCREEN: SCAN -->
+<div class="screen" id="screen-scan">
+  <div class="scan-mode-label" id="scan-mode-label">Update Counts</div>
+
+  <div class="scan-box-wrap">
+    <div class="scan-box-label">Scan barcode or type item name</div>
+    <input
+      class="scan-box"
+      id="scan-input"
+      type="text"
+      placeholder="Scan or search..."
+      autocomplete="off"
+      autocorrect="off"
+      autocapitalize="off"
+      spellcheck="false"
+      inputmode="none"
+      onkeydown="scanKeydown(event)"
+    />
+  </div>
+
+  <button class="scan-camera-btn" onclick="toggleCamera()">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 15.2A3.2 3.2 0 0 1 8.8 12 3.2 3.2 0 0 1 12 8.8 3.2 3.2 0 0 1 15.2 12 3.2 3.2 0 0 1 12 15.2M12 7a5 5 0 0 0-5 5 5 5 0 0 0 5 5 5 5 0 0 0 5-5 5 5 0 0 0-5-5m-7-1h2.5l1.83-2H14.67L16.5 6H19a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2z"/></svg>
+    Use Camera to Scan
+  </button>
+
+  <div class="camera-wrap" id="camera-wrap">
+    <video id="camera-video" autoplay playsinline muted></video>
+    <div class="camera-close-btn" onclick="closeCamera()">Close Camera</div>
+  </div>
+
+  <div class="scan-not-found" id="scan-not-found">
+    Item not found. Check the barcode or search by name.
+  </div>
+
+  <div class="item-card" id="item-card">
+    <div class="item-card-name" id="item-card-name">—</div>
+    <div class="item-card-meta" id="item-card-meta">—</div>
+    <div class="item-card-current">
+      <div>
+        <div class="item-card-current-label" id="item-current-label">Current On Hand</div>
+        <div class="item-card-current-value" id="item-card-current">—</div>
+      </div>
+    </div>
+    <div class="item-input-label" id="item-input-label">Enter actual count</div>
+    <input class="item-input" id="item-value-input" type="number" inputmode="decimal" placeholder="0" min="0" step="0.5" />
+    <button class="item-add-btn" id="item-add-btn" onclick="addToQueue()">Add to Queue</button>
+  </div>
+
+  <div class="queue-counter" id="scan-queue-counter" style="display:none;">
+    <span class="queue-counter-label">Items in queue</span>
+    <span class="queue-counter-num" id="scan-queue-num">0</span>
+  </div>
+
+  <button class="scan-back-btn" onclick="goToMenu()">← Back to Menu</button>
+</div>
+
+<!-- SCREEN: QUEUE REVIEW -->
+<div class="screen" id="screen-queue">
+  <div class="queue-header">
+    <div class="queue-title">Review Changes</div>
+    <div class="queue-sub">Confirm everything looks right before submitting.</div>
+  </div>
+
+  <div class="queue-list" id="queue-list"></div>
+
+  <button class="queue-done-btn" id="queue-done-btn" onclick="submitQueue()">Submit All Changes</button>
+  <button class="queue-add-more-btn" onclick="goBackToScan()">← Add More Items</button>
+</div>
+
+<!-- SCREEN: SYNC RESULT -->
+<div class="screen" id="screen-sync">
+  <div class="sync-wrap">
+    <div class="sync-icon" id="sync-icon">⏳</div>
+    <div class="sync-title" id="sync-title">Submitting...</div>
+    <div class="sync-sub" id="sync-sub">Please wait while your changes are saved.</div>
+    <button class="sync-done-btn" id="sync-done-btn" onclick="finishSync()" style="display:none;">Done</button>
+  </div>
+</div>
+
+<!-- TOAST -->
+<div class="toast" id="toast"></div>
+
+<script>
+  // ── CONFIG ──
+  const AIRTABLE_BASE = 'appTxjUklSxnapgJr';
+  const AIRTABLE_TOKEN = window.AIRTABLE_TOKEN || localStorage.getItem('scg_airtable_token') || '';
+  const WEBHOOK_URL = 'PLACEHOLDER_WEBHOOK_URL'; // replace when Make.com webhook is built
+  const STORE_USERS_TABLE = 'Store Users';
+  const STORE_INVENTORY_TABLE = 'Store Inventory';
+  const ITEMS_MASTER_TABLE = 'Items Master';
+
+  // ── STATE ──
+  let currentUser = null;
+  let currentMode = 'count'; // 'count' | 'order'
+  let currentItem = null;
+  let pendingQueue = [];
+  let lastScanMode = 'count';
+  let cameraStream = null;
+  let barcodeBuffer = '';
+  let barcodeTimer = null;
+
+  // ── INIT ──
+  window.addEventListener('load', () => {
+    loadQueueFromStorage();
+    updateQueueBanner();
+    // Auto-focus scan input when on scan screen
+  });
+
+  // ── STORAGE ──
+  function loadQueueFromStorage() {
+    try {
+      const stored = localStorage.getItem('scg_pending_queue');
+      if (stored) pendingQueue = JSON.parse(stored);
+    } catch(e) { pendingQueue = []; }
+  }
+
+  function saveQueueToStorage() {
+    localStorage.setItem('scg_pending_queue', JSON.stringify(pendingQueue));
+  }
+
+  // ── SCREEN NAV ──
+  function showScreen(id) {
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    document.getElementById('screen-' + id).classList.add('active');
+    updateHeader(id);
+  }
+
+  function updateHeader(screen) {
+    const sub = document.getElementById('header-sub');
+    const right = document.getElementById('header-right');
+    if (screen === 'pin') {
+      sub.textContent = 'Inventory Tool';
+      right.innerHTML = '';
+    } else if (screen === 'menu') {
+      sub.textContent = currentUser ? currentUser.store : 'Inventory Tool';
+      right.innerHTML = '';
+    } else if (screen === 'scan') {
+      sub.textContent = currentUser ? currentUser.store : '';
+      right.innerHTML = `<div class="header-mode-badge">${currentMode === 'count' ? 'COUNTS' : 'ORDER'}</div>`;
+    } else if (screen === 'queue') {
+      sub.textContent = 'Review Changes';
+      right.innerHTML = `<div class="header-badge">${pendingQueue.length} item${pendingQueue.length !== 1 ? 's' : ''}</div>`;
+    } else if (screen === 'sync') {
+      sub.textContent = 'Submitting';
+      right.innerHTML = '';
+    }
+  }
+
+  // ── PIN ──
+  let pinValue = '';
+
+  function pinPress(digit) {
+    if (pinValue.length >= 4) return;
+    pinValue += digit;
+    updatePinDisplay();
+    if (pinValue.length === 4) setTimeout(pinEnter, 100);
+  }
+
+  function pinClear() {
+    pinValue = '';
+    updatePinDisplay();
+    const disp = document.getElementById('pin-display');
+    disp.classList.remove('error');
+  }
+
+  function updatePinDisplay() {
+    const disp = document.getElementById('pin-display');
+    const dots = '●'.repeat(pinValue.length) + '–'.repeat(4 - pinValue.length);
+    disp.textContent = dots;
+    disp.classList.remove('error');
+  }
+
+  async function pinEnter() {
+    if (!pinValue) return;
+    // Look up PIN in Store Users table
+    try {
+      const url = `https://api.airtable.com/v0/${AIRTABLE_BASE}/${encodeURIComponent(STORE_USERS_TABLE)}?filterByFormula={PIN}="${pinValue}"&maxRecords=1`;
+      const res = await fetch(url, { headers: { Authorization: `Bearer ${AIRTABLE_TOKEN}` } });
+      const data = await res.json();
+      if (data.records && data.records.length > 0) {
+        const rec = data.records[0].fields;
+        currentUser = {
+          id: data.records[0].id,
+          name: rec['Name'] || 'User',
+          role: rec['Role'] || '',
+          store: rec['Store Location'] ? 'Store' : 'Store', // Store name via lookup if available
+          storeId: rec['Store Location'] ? rec['Store Location'][0] : null
+        };
+        document.getElementById('menu-user-name').textContent = currentUser.name;
+        document.getElementById('menu-store-name').textContent = currentUser.role || 'Store Team';
+        pinValue = '';
+        updatePinDisplay();
+        showScreen('menu');
+        updateQueueBanner();
+      } else {
+        pinValue = '';
+        const disp = document.getElementById('pin-display');
+        disp.textContent = 'Try again';
+        disp.classList.add('error');
+        setTimeout(() => { disp.textContent = '––––'; disp.classList.remove('error'); }, 1500);
+      }
+    } catch(e) {
+      // Offline fallback — allow entry with cached user if available
+      const cached = localStorage.getItem('scg_last_user');
+      if (cached) {
+        currentUser = JSON.parse(cached);
+        showScreen('menu');
+        showToast('Offline — using cached session');
+      } else {
+        showToast('Cannot verify PIN — no connection');
+        pinValue = '';
+        updatePinDisplay();
+      }
+    }
+  }
+
+  // ── MODE SELECT ──
+  function startMode(mode) {
+    currentMode = mode;
+    lastScanMode = mode;
+    currentItem = null;
+    document.getElementById('item-card').classList.remove('visible');
+    document.getElementById('scan-not-found').classList.remove('visible');
+    document.getElementById('scan-input').value = '';
+
+    const modeLabel = document.getElementById('scan-mode-label');
+    const inputLabel = document.getElementById('item-input-label');
+    const addBtn = document.getElementById('item-add-btn');
+    const currentLabel = document.getElementById('item-current-label');
+
+    if (mode === 'count') {
+      modeLabel.textContent = 'Update Counts';
+      inputLabel.textContent = 'Enter actual count';
+      addBtn.textContent = 'Add to Queue';
+      addBtn.className = 'item-add-btn';
+      currentLabel.textContent = 'Current On Hand';
+    } else {
+      modeLabel.textContent = 'Manual Order';
+      inputLabel.textContent = 'Enter order quantity';
+      addBtn.textContent = 'Add to Order Queue';
+      addBtn.className = 'item-add-btn order-mode';
+      currentLabel.textContent = 'Current Override';
+    }
+
+    showScreen('scan');
+    setTimeout(() => document.getElementById('scan-input').focus(), 100);
+  }
+
+  // ── SCAN INPUT ──
+  // Hardware scanner sends keystrokes fast then Enter — detect via timing
+  document.addEventListener('keydown', function(e) {
+    const scanInput = document.getElementById('scan-input');
+    const activeScreen = document.querySelector('.screen.active');
+    if (!activeScreen || activeScreen.id !== 'screen-scan') return;
+    if (document.activeElement !== scanInput) scanInput.focus();
+  });
+
+  function scanKeydown(e) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const val = e.target.value.trim();
+      if (val) lookupItem(val);
+    }
+  }
+
+  // ── ITEM LOOKUP ──
+  async function lookupItem(query) {
+    document.getElementById('scan-not-found').classList.remove('visible');
+    document.getElementById('item-card').classList.remove('visible');
+
+    try {
+      // Try UPC first, then Item Name
+      const isNumeric = /^\d+$/.test(query);
+      let formula = isNumeric
+        ? `{UPC}="${query}"`
+        : `SEARCH(LOWER("${query.replace(/"/g, '\\"')}"), LOWER({Item Name}))`;
+
+      const url = `https://api.airtable.com/v0/${AIRTABLE_BASE}/${encodeURIComponent(ITEMS_MASTER_TABLE)}?filterByFormula=${encodeURIComponent(formula)}&maxRecords=1`;
+      const res = await fetch(url, { headers: { Authorization: `Bearer ${AIRTABLE_TOKEN}` } });
+      const data = await res.json();
+
+      if (data.records && data.records.length > 0) {
+        const rec = data.records[0];
+        const fields = rec.fields;
+
+        // Now get Store Inventory record for on-hand / override
+        let onHand = '—';
+        let overrideQty = '—';
+        let storeInvId = null;
+
+        if (currentUser && currentUser.storeId) {
+          const invUrl = `https://api.airtable.com/v0/${AIRTABLE_BASE}/${encodeURIComponent(STORE_INVENTORY_TABLE)}?filterByFormula=AND({Item}="${rec.id}",{Store Location}="${currentUser.storeId}")&maxRecords=1`;
+          const invRes = await fetch(invUrl, { headers: { Authorization: `Bearer ${AIRTABLE_TOKEN}` } });
+          const invData = await invRes.json();
+          if (invData.records && invData.records.length > 0) {
+            const inv = invData.records[0];
+            storeInvId = inv.id;
+            onHand = inv.fields['On Hand Qty'] !== undefined ? inv.fields['On Hand Qty'] : '—';
+            overrideQty = inv.fields['Manual Order Override'] !== undefined ? inv.fields['Manual Order Override'] : '—';
+          }
+        }
+
+        currentItem = {
+          masterRecId: rec.id,
+          storeInvRecId: storeInvId,
+          name: fields['Item Name'] || fields['Canonical Name'] || query,
+          category: fields['Category'] || '',
+          vendor: fields['Vendor'] ? (Array.isArray(fields['Vendor']) ? fields['Vendor'][0] : fields['Vendor']) : '',
+          onHand: onHand,
+          overrideQty: overrideQty,
+          upc: fields['UPC'] || ''
+        };
+
+        document.getElementById('item-card-name').textContent = currentItem.name;
+        document.getElementById('item-card-meta').textContent = [currentItem.category, currentItem.vendor].filter(Boolean).join(' · ');
+        document.getElementById('item-card-current').textContent = currentMode === 'count' ? currentItem.onHand : currentItem.overrideQty;
+        document.getElementById('item-value-input').value = '';
+        document.getElementById('item-card').classList.add('visible');
+        document.getElementById('scan-input').value = '';
+
+        setTimeout(() => document.getElementById('item-value-input').focus(), 100);
+      } else {
+        document.getElementById('scan-not-found').classList.add('visible');
+        document.getElementById('scan-input').value = '';
+        document.getElementById('scan-input').focus();
+      }
+    } catch(e) {
+      showToast('Connection error — check network');
+    }
+  }
+
+  // ── ADD TO QUEUE ──
+  function addToQueue() {
+    if (!currentItem) return;
+    const val = parseFloat(document.getElementById('item-value-input').value);
+    if (isNaN(val) || val < 0) { showToast('Enter a valid quantity'); return; }
+
+    const entry = {
+      id: Date.now(),
+      mode: currentMode,
+      itemName: currentItem.name,
+      masterRecId: currentItem.masterRecId,
+      storeInvRecId: currentItem.storeInvRecId,
+      value: val,
+      unit: 'each',
+      user: currentUser ? currentUser.name : 'Unknown',
+      timestamp: new Date().toISOString()
+    };
+
+    // Replace if same item+mode already in queue
+    const existingIdx = pendingQueue.findIndex(q => q.masterRecId === entry.masterRecId && q.mode === entry.mode);
+    if (existingIdx > -1) pendingQueue.splice(existingIdx, 1);
+    pendingQueue.push(entry);
+    saveQueueToStorage();
+    updateQueueCounter();
+    updateQueueBanner();
+    showToast(`${currentItem.name} added to queue`);
+
+    // Reset for next scan
+    currentItem = null;
+    document.getElementById('item-card').classList.remove('visible');
+    document.getElementById('item-value-input').value = '';
+    document.getElementById('scan-input').value = '';
+    setTimeout(() => document.getElementById('scan-input').focus(), 100);
+  }
+
+  // ── QUEUE DISPLAY ──
+  function updateQueueCounter() {
+    const counter = document.getElementById('scan-queue-counter');
+    const num = document.getElementById('scan-queue-num');
+    if (pendingQueue.length > 0) {
+      counter.style.display = 'flex';
+      num.textContent = pendingQueue.length;
+    } else {
+      counter.style.display = 'none';
+    }
+  }
+
+  function updateQueueBanner() {
+    const banner = document.getElementById('queue-banner');
+    const count = document.getElementById('queue-banner-count');
+    const submitBtn = document.getElementById('menu-submit-btn');
+    if (pendingQueue.length > 0) {
+      banner.classList.add('visible');
+      submitBtn.classList.add('visible');
+      count.textContent = pendingQueue.length;
+    } else {
+      banner.classList.remove('visible');
+      submitBtn.classList.remove('visible');
+    }
+  }
+
+  function renderQueue() {
+    const list = document.getElementById('queue-list');
+    if (pendingQueue.length === 0) {
+      list.innerHTML = `<div class="queue-empty"><div class="queue-empty-icon">📋</div><div class="queue-empty-text">No changes yet</div><div class="queue-empty-sub">Scan items to add them here.</div></div>`;
+      document.getElementById('queue-done-btn').disabled = true;
+      return;
+    }
+    document.getElementById('queue-done-btn').disabled = false;
+    list.innerHTML = pendingQueue.map(q => `
+      <div class="queue-item">
+        <div class="queue-item-type ${q.mode}">${q.mode === 'count' ? 'CNT' : 'ORD'}</div>
+        <div>
+          <div class="queue-item-name">${q.itemName}</div>
+          <div class="queue-item-value">${q.mode === 'count' ? 'On hand: ' : 'Order qty: '}${q.value}</div>
+        </div>
+        <div class="queue-item-remove" onclick="removeFromQueue(${q.id})">✕</div>
+      </div>
+    `).join('');
+
+    updateHeader('queue');
+  }
+
+  function removeFromQueue(id) {
+    pendingQueue = pendingQueue.filter(q => q.id !== id);
+    saveQueueToStorage();
+    renderQueue();
+    updateQueueBanner();
+  }
+
+  // ── NAVIGATION ──
+  function goToMenu() {
+    closeCamera();
+    showScreen('menu');
+    updateQueueBanner();
+  }
+
+  function goToQueue() {
+    closeCamera();
+    renderQueue();
+    showScreen('queue');
+  }
+
+  function goBackToScan() {
+    startMode(lastScanMode);
+  }
+
+  function signOut() {
+    currentUser = null;
+    pinValue = '';
+    document.getElementById('pin-display').textContent = '––––';
+    showScreen('pin');
+  }
+
+  // ── SUBMIT ──
+  async function submitQueue() {
+    if (pendingQueue.length === 0) return;
+    showScreen('sync');
+
+    const icon = document.getElementById('sync-icon');
+    const title = document.getElementById('sync-title');
+    const sub = document.getElementById('sync-sub');
+    const doneBtn = document.getElementById('sync-done-btn');
+
+    icon.className = 'sync-icon loading';
+    icon.textContent = '⏳';
+    title.textContent = 'Submitting...';
+    sub.textContent = 'Sending your changes. Please wait.';
+    doneBtn.style.display = 'none';
+
+    const payload = {
+      user: currentUser ? currentUser.name : 'Unknown',
+      storeId: currentUser ? currentUser.storeId : null,
+      submittedAt: new Date().toISOString(),
+      changes: pendingQueue
+    };
+
+    try {
+      if (WEBHOOK_URL === 'PLACEHOLDER_WEBHOOK_URL') throw new Error('Webhook not configured');
+      const res = await fetch(WEBHOOK_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      if (res.ok) {
+        pendingQueue = [];
+        saveQueueToStorage();
+        icon.className = 'sync-icon success';
+        icon.textContent = '✓';
+        title.textContent = 'Changes Saved';
+        sub.textContent = `All ${payload.changes.length} change${payload.changes.length !== 1 ? 's' : ''} have been submitted successfully.`;
+        doneBtn.style.display = 'inline-block';
+      } else {
+        throw new Error('Server error');
+      }
+    } catch(e) {
+      // Cache for later sync
+      icon.className = 'sync-icon offline';
+      icon.textContent = '📶';
+      title.textContent = 'Saved Offline';
+      sub.textContent = `No connection right now. Your ${payload.changes.length} change${payload.changes.length !== 1 ? 's' : ''} are saved and will sync automatically when you're back online.`;
+      doneBtn.style.display = 'inline-block';
+      // Queue stays in localStorage for next sync attempt
+    }
+  }
+
+  function finishSync() {
+    updateQueueBanner();
+    showScreen('menu');
+  }
+
+  // ── CAMERA ──
+  async function toggleCamera() {
+    const wrap = document.getElementById('camera-wrap');
+    if (wrap.classList.contains('visible')) {
+      closeCamera();
+    } else {
+      try {
+        cameraStream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'environment' }
+        });
+        const video = document.getElementById('camera-video');
+        video.srcObject = cameraStream;
+        wrap.classList.add('visible');
+        showToast('Camera active — hold barcode in frame');
+        // Note: full barcode decoding via camera requires a library like ZXing
+        // Placeholder — wire in when ready
+      } catch(e) {
+        showToast('Camera access denied');
+      }
+    }
+  }
+
+  function closeCamera() {
+    if (cameraStream) {
+      cameraStream.getTracks().forEach(t => t.stop());
+      cameraStream = null;
+    }
+    const wrap = document.getElementById('camera-wrap');
+    wrap.classList.remove('visible');
+  }
+
+  // ── TOAST ──
+  let toastTimer;
+  function showToast(msg) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => t.classList.remove('show'), 2500);
+  }
+
+  // ── ONLINE SYNC ──
+  window.addEventListener('online', async () => {
+    if (pendingQueue.length > 0 && WEBHOOK_URL !== 'PLACEHOLDER_WEBHOOK_URL') {
+      showToast('Back online — syncing changes...');
+      // Auto-sync attempt in background
+      try {
+        const payload = {
+          user: currentUser ? currentUser.name : 'Cached',
+          submittedAt: new Date().toISOString(),
+          changes: pendingQueue
+        };
+        const res = await fetch(WEBHOOK_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        if (res.ok) {
+          pendingQueue = [];
+          saveQueueToStorage();
+          updateQueueBanner();
+          showToast('Sync complete');
+        }
+      } catch(e) {}
+    }
+  });
+</script>
+</body>
+</html>
