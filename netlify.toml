@@ -3,6 +3,9 @@
   publish = "dist"
   functions = "netlify/functions"
 
+[build.environment]
+  SECRETS_SCAN_OMIT_KEYS = "VITE_AIRTABLE_BASE_ID"
+
 [[redirects]]
   from = "/handheld.html"
   to = "/handheld.html"
