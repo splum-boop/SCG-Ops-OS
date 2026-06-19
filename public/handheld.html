@@ -720,11 +720,23 @@
 <script>
   // ── CONFIG ──
   const AIRTABLE_BASE = 'appTxjUklSxnapgJr';
-  const AIRTABLE_TOKEN = window.AIRTABLE_TOKEN || localStorage.getItem('scg_airtable_token') || '';
+  let AIRTABLE_TOKEN = window.AIRTABLE_TOKEN || localStorage.getItem('scg_airtable_token') || '';
   const WEBHOOK_URL = 'PLACEHOLDER_WEBHOOK_URL'; // replace when Make.com webhook is built
   const STORE_USERS_TABLE = 'Store Users';
   const STORE_INVENTORY_TABLE = 'Store Inventory';
   const ITEMS_MASTER_TABLE = 'Items Master';
+
+  // Fetches the Airtable token at runtime from a Netlify Function so it
+  // never appears in this static file or the build output.
+  async function fetchAirtableToken() {
+    try {
+      const res = await fetch('/.netlify/functions/get-token');
+      const data = await res.json();
+      if (data && data.token) AIRTABLE_TOKEN = data.token;
+    } catch (e) {
+      // Fall back to whatever was already set (window.AIRTABLE_TOKEN / localStorage)
+    }
+  }
 
   // ── STATE ──
   let currentUser = null;
@@ -738,6 +750,7 @@
 
   // ── INIT ──
   window.addEventListener('load', () => {
+    fetchAirtableToken();
     loadQueueFromStorage();
     updateQueueBanner();
     // Auto-focus scan input when on scan screen
