@@ -381,6 +381,21 @@
     }
     .scan-not-found.visible { display: block; }
 
+    .item-results-list { display: none; flex-direction: column; gap: 8px; margin-bottom: 16px; }
+    .item-results-list.visible { display: flex; }
+    .item-result-btn {
+      background: var(--surface);
+      border: 1.5px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px 16px;
+      cursor: pointer;
+      text-align: left;
+      width: 100%;
+    }
+    .item-result-btn:active { border-color: var(--navy); background: var(--navy-light); }
+    .item-result-name { font-size: 15px; font-weight: 700; color: var(--text); }
+    .item-result-meta { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
+
     /* Queue counter */
     .queue-counter {
       background: var(--navy-light);
@@ -672,6 +687,8 @@
     Item not found. Check the barcode or search by name.
   </div>
 
+  <div class="item-results-list" id="item-results-list"></div>
+
   <div class="item-card" id="item-card">
     <div class="item-card-name" id="item-card-name">—</div>
     <div class="item-card-meta" id="item-card-meta">—</div>
@@ -750,6 +767,8 @@
   let cameraStream = null;
   let barcodeBuffer = '';
   let barcodeTimer = null;
+  let lookupResultsCache = [];
+  let lookupResultsQuery = '';
 
   // ── INIT ──
   window.addEventListener('load', () => {
@@ -874,6 +893,8 @@
     currentItem = null;
     document.getElementById('item-card').classList.remove('visible');
     document.getElementById('scan-not-found').classList.remove('visible');
+    document.getElementById('item-results-list').classList.remove('visible');
+    document.getElementById('item-results-list').innerHTML = '';
     document.getElementById('scan-input').value = '';
 
     const modeLabel = document.getElementById('scan-mode-label');
@@ -905,7 +926,9 @@
     const scanInput = document.getElementById('scan-input');
     const activeScreen = document.querySelector('.screen.active');
     if (!activeScreen || activeScreen.id !== 'screen-scan') return;
-    if (document.activeElement !== scanInput) scanInput.focus();
+    const active = document.activeElement;
+    if (active && active !== scanInput && active.tagName === 'INPUT') return;
+    if (active !== scanInput) scanInput.focus();
   });
 
   function scanKeydown(e) {
@@ -920,6 +943,8 @@
   async function lookupItem(query) {
     document.getElementById('scan-not-found').classList.remove('visible');
     document.getElementById('item-card').classList.remove('visible');
+    document.getElementById('item-results-list').classList.remove('visible');
+    document.getElementById('item-results-list').innerHTML = '';
 
     try {
       // Try UPC first, then Item Name
@@ -928,50 +953,15 @@
         ? `{UPC}="${query}"`
         : `SEARCH(LOWER("${query.replace(/"/g, '\\"')}"), LOWER({Item Name}))`;
 
-      const url = `https://api.airtable.com/v0/${AIRTABLE_BASE}/${encodeURIComponent(ITEMS_MASTER_TABLE)}?filterByFormula=${encodeURIComponent(formula)}&maxRecords=1`;
+      const maxRecords = isNumeric ? 1 : 10;
+      const url = `https://api.airtable.com/v0/${AIRTABLE_BASE}/${encodeURIComponent(ITEMS_MASTER_TABLE)}?filterByFormula=${encodeURIComponent(formula)}&maxRecords=${maxRecords}`;
       const res = await fetch(url, { headers: { Authorization: `Bearer ${AIRTABLE_TOKEN}` } });
       const data = await res.json();
 
-      if (data.records && data.records.length > 0) {
-        const rec = data.records[0];
-        const fields = rec.fields;
-
-        // Now get Store Inventory record for on-hand / override
-        let onHand = '—';
-        let overrideQty = '—';
-        let storeInvId = null;
-
-        if (currentUser && currentUser.storeId) {
-          const invUrl = `https://api.airtable.com/v0/${AIRTABLE_BASE}/${encodeURIComponent(STORE_INVENTORY_TABLE)}?filterByFormula=AND({Item}="${rec.id}",{Store Location}="${currentUser.storeId}")&maxRecords=1`;
-          const invRes = await fetch(invUrl, { headers: { Authorization: `Bearer ${AIRTABLE_TOKEN}` } });
-          const invData = await invRes.json();
-          if (invData.records && invData.records.length > 0) {
-            const inv = invData.records[0];
-            storeInvId = inv.id;
-            onHand = inv.fields['On Hand Qty'] !== undefined ? inv.fields['On Hand Qty'] : '—';
-            overrideQty = inv.fields['Manual Order Override'] !== undefined ? inv.fields['Manual Order Override'] : '—';
-          }
-        }
-
-        currentItem = {
-          masterRecId: rec.id,
-          storeInvRecId: storeInvId,
-          name: fields['Item Name'] || fields['Canonical Name'] || query,
-          category: fields['Category'] || '',
-          vendor: fields['Vendor'] ? (Array.isArray(fields['Vendor']) ? fields['Vendor'][0] : fields['Vendor']) : '',
-          onHand: onHand,
-          overrideQty: overrideQty,
-          upc: fields['UPC'] || ''
-        };
-
-        document.getElementById('item-card-name').textContent = currentItem.name;
-        document.getElementById('item-card-meta').textContent = [currentItem.category, currentItem.vendor].filter(Boolean).join(' · ');
-        document.getElementById('item-card-current').textContent = currentMode === 'count' ? currentItem.onHand : currentItem.overrideQty;
-        document.getElementById('item-value-input').value = '';
-        document.getElementById('item-card').classList.add('visible');
-        document.getElementById('scan-input').value = '';
-
-        setTimeout(() => document.getElementById('item-value-input').focus(), 100);
+      if (data.records && data.records.length > 1) {
+        renderItemResults(data.records, query);
+      } else if (data.records && data.records.length === 1) {
+        await selectItem(data.records[0], query);
       } else {
         document.getElementById('scan-not-found').classList.add('visible');
         document.getElementById('scan-input').value = '';
@@ -980,6 +970,72 @@
     } catch(e) {
       showToast('Connection error — check network');
     }
+  }
+
+  function renderItemResults(records, query) {
+    const list = document.getElementById('item-results-list');
+    list.innerHTML = records.map((rec, i) => {
+      const fields = rec.fields;
+      const name = fields['Item Name'] || fields['Canonical Name'] || query;
+      const meta = [fields['Category'] || '', fields['Vendor'] ? (Array.isArray(fields['Vendor']) ? fields['Vendor'][0] : fields['Vendor']) : ''].filter(Boolean).join(' · ');
+      return `
+        <button class="item-result-btn" onclick="selectItemByIndex(${i})">
+          <div class="item-result-name">${name}</div>
+          ${meta ? `<div class="item-result-meta">${meta}</div>` : ''}
+        </button>
+      `;
+    }).join('');
+    list.classList.add('visible');
+    lookupResultsCache = records;
+    lookupResultsQuery = query;
+  }
+
+  function selectItemByIndex(i) {
+    selectItem(lookupResultsCache[i], lookupResultsQuery);
+  }
+
+  async function selectItem(rec, query) {
+    document.getElementById('item-results-list').classList.remove('visible');
+    document.getElementById('item-results-list').innerHTML = '';
+
+    const fields = rec.fields;
+
+    // Now get Store Inventory record for on-hand / override
+    let onHand = '—';
+    let overrideQty = '—';
+    let storeInvId = null;
+
+    if (currentUser && currentUser.storeId) {
+      const invUrl = `https://api.airtable.com/v0/${AIRTABLE_BASE}/${encodeURIComponent(STORE_INVENTORY_TABLE)}?filterByFormula=AND({Item}="${rec.id}",{Store Location}="${currentUser.storeId}")&maxRecords=1`;
+      const invRes = await fetch(invUrl, { headers: { Authorization: `Bearer ${AIRTABLE_TOKEN}` } });
+      const invData = await invRes.json();
+      if (invData.records && invData.records.length > 0) {
+        const inv = invData.records[0];
+        storeInvId = inv.id;
+        onHand = inv.fields['On Hand Qty'] !== undefined ? inv.fields['On Hand Qty'] : '—';
+        overrideQty = inv.fields['Manual Order Override'] !== undefined ? inv.fields['Manual Order Override'] : '—';
+      }
+    }
+
+    currentItem = {
+      masterRecId: rec.id,
+      storeInvRecId: storeInvId,
+      name: fields['Item Name'] || fields['Canonical Name'] || query,
+      category: fields['Category'] || '',
+      vendor: fields['Vendor'] ? (Array.isArray(fields['Vendor']) ? fields['Vendor'][0] : fields['Vendor']) : '',
+      onHand: onHand,
+      overrideQty: overrideQty,
+      upc: fields['UPC'] || ''
+    };
+
+    document.getElementById('item-card-name').textContent = currentItem.name;
+    document.getElementById('item-card-meta').textContent = [currentItem.category, currentItem.vendor].filter(Boolean).join(' · ');
+    document.getElementById('item-card-current').textContent = currentMode === 'count' ? currentItem.onHand : currentItem.overrideQty;
+    document.getElementById('item-value-input').value = '';
+    document.getElementById('item-card').classList.add('visible');
+    document.getElementById('scan-input').value = '';
+
+    setTimeout(() => document.getElementById('item-value-input').focus(), 100);
   }
 
   // ── ADD TO QUEUE ──
