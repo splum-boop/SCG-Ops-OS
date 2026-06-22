@@ -926,7 +926,7 @@
         let storeInvId = null;
 
         if (currentUser && currentUser.storeId) {
-          const invUrl = `https://api.airtable.com/v0/${AIRTABLE_BASE}/${encodeURIComponent(STORE_INVENTORY_TABLE)}?filterByFormula=AND({Item}="${rec.id}",{Store Location}="${currentUser.storeId}")&maxRecords=1`;
+          const invUrl = `https://api.airtable.com/v0/${AIRTABLE_BASE}/${encodeURIComponent(STORE_INVENTORY_TABLE)}?filterByFormula=AND(FIND("${rec.id}",ARRAYJOIN({Item})),FIND("${currentUser.storeId}",ARRAYJOIN({Store Location})))&maxRecords=1`;
           const invRes = await fetch(invUrl, { headers: { Authorization: `Bearer ${AIRTABLE_TOKEN}` } });
           const invData = await invRes.json();
           if (invData.records && invData.records.length > 0) {
