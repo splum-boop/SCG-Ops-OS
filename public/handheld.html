@@ -1009,6 +1009,9 @@
       const invUrl = `https://api.airtable.com/v0/${AIRTABLE_BASE}/${encodeURIComponent(STORE_INVENTORY_TABLE)}?filterByFormula=AND({Item}="${rec.id}",{Store Location}="${currentUser.storeId}")&maxRecords=1`;
       const invRes = await fetch(invUrl, { headers: { Authorization: `Bearer ${AIRTABLE_TOKEN}` } });
       const invData = await invRes.json();
+      console.log('Store Inventory lookup URL:', invUrl);
+      console.log('Store Inventory lookup status:', invRes.status);
+      console.log('Store Inventory lookup response:', invData);
       if (invData.records && invData.records.length > 0) {
         const inv = invData.records[0];
         storeInvId = inv.id;
