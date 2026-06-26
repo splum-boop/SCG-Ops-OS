@@ -1006,7 +1006,9 @@
     let storeInvId = null;
 
     if (currentUser && currentUser.storeId) {
-      const invUrl = `https://api.airtable.com/v0/${AIRTABLE_BASE}/${encodeURIComponent(STORE_INVENTORY_TABLE)}?filterByFormula=AND(FIND("${rec.id}",ARRAYJOIN({Item})),FIND("${currentUser.storeId}",ARRAYJOIN({Store Location})))&maxRecords=1`;
+      const itemName = fields['Item Name'];
+      const invFormula = `AND(FIND(LOWER('${itemName.replace(/'/g, "\\'")}'),LOWER(ARRAYJOIN({Item}))),FIND('${currentUser.storeId}',ARRAYJOIN({Store Location})))`;
+      const invUrl = `https://api.airtable.com/v0/${AIRTABLE_BASE}/${encodeURIComponent(STORE_INVENTORY_TABLE)}?filterByFormula=${encodeURIComponent(invFormula)}&maxRecords=1`;
       const invRes = await fetch(invUrl, { headers: { Authorization: `Bearer ${AIRTABLE_TOKEN}` } });
       const invData = await invRes.json();
       console.log('Store Inventory lookup URL:', invUrl);
