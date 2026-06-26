@@ -856,8 +856,19 @@
           name: rec['Name'] || 'User',
           role: rec['Role'] || '',
           store: rec['Store Location'] ? 'Store' : 'Store', // Store name via lookup if available
-          storeId: rec['Store Location'] ? rec['Store Location'][0] : null
+          storeId: rec['Store Location'] ? rec['Store Location'][0] : null,
+          storeName: null
         };
+        if (currentUser.storeId) {
+          try {
+            const nameUrl = `https://api.airtable.com/v0/${AIRTABLE_BASE}/${encodeURIComponent(STORE_USERS_TABLE)}/${currentUser.id}?cellFormat=string&timeZone=America%2FNew_York&userLocale=en-us`;
+            const nameRes = await fetch(nameUrl, { headers: { Authorization: `Bearer ${AIRTABLE_TOKEN}` } });
+            const nameData = await nameRes.json();
+            currentUser.storeName = nameData.fields ? (nameData.fields['Store Location'] || null) : null;
+          } catch (e) {
+            currentUser.storeName = null;
+          }
+        }
         document.getElementById('menu-user-name').textContent = currentUser.name;
         document.getElementById('menu-store-name').textContent = currentUser.role || 'Store Team';
         pinValue = '';
@@ -1007,7 +1018,7 @@
 
     if (currentUser && currentUser.storeId) {
       const itemName = fields['Item Name'];
-      const invFormula = `AND(FIND(LOWER('${itemName.replace(/'/g, "\\'")}'),LOWER(ARRAYJOIN({Item}))),FIND(LOWER('${currentUser.storeId}'),LOWER(ARRAYJOIN({Store Location}))))`;
+      const invFormula = `AND(FIND(LOWER('${itemName.replace(/'/g, "\\'")}'),LOWER(ARRAYJOIN({Item}))),FIND(LOWER('${currentUser.storeName}'),LOWER(ARRAYJOIN({Store Location}))))`;
       const invUrl = `https://api.airtable.com/v0/${AIRTABLE_BASE}/${encodeURIComponent(STORE_INVENTORY_TABLE)}?filterByFormula=${encodeURIComponent(invFormula)}&maxRecords=1`;
       const invRes = await fetch(invUrl, { headers: { Authorization: `Bearer ${AIRTABLE_TOKEN}` } });
       const invData = await invRes.json();
